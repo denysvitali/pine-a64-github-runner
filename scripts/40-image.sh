@@ -28,27 +28,35 @@ start=+,    size=${SIZE_SLOT}MiB, type=83
 start=+,    type=83
 EOF
 
-LOOPDEV=$(losetup --find --show --partscan "$IMG")
-cleanup() { umount_all "$BOOT_MNT" "$SLOT_MNT"; losetup -d "$LOOPDEV" 2>/dev/null || true; }
+LOOPDEV=""
+cleanup() {
+    umount_all "$BOOT_MNT" "$SLOT_MNT"
+    unmap_partition
+    [ -z "$LOOPDEV" ] || losetup -d "$LOOPDEV" 2>/dev/null || true
+}
 trap cleanup EXIT INT TERM
 
-P1="${LOOPDEV}p1"; P2="${LOOPDEV}p2"; P3="${LOOPDEV}p3"; P4="${LOOPDEV}p4"
-for p in "$P1" "$P2" "$P3" "$P4"; do [ -b "$p" ] || die "missing $p"; done
-
+# per-partition loop mapping (immune to loop.max_part=0)
+map_partition "$IMG" 1; P1="$PART_DEV"
 mkfs.vfat -n BOOT "$P1" >/dev/null
-mkfs.ext4 -q -L slot-a -E lazy_itable_init=0,lazy_journal_init=0 "$P2"
-mkfs.ext4 -q -L slot-b -E lazy_itable_init=0,lazy_journal_init=0 "$P3"
-mkfs.ext4 -q -L data   -E lazy_itable_init=0,lazy_journal_init=0 "$P4"
+unmap_partition
 
-# --- populate both rootfs slots ---
 for SLOT in a b; do
     log "Populating slot-$SLOT"
-    mount "$([ "$SLOT" = a ] && echo "$P2" || echo "$P3")" "$SLOT_MNT"
+    map_partition "$IMG" $([ "$SLOT" = a ] && echo 2 || echo 3)
+    mkfs.ext4 -q -L "slot-$SLOT" -E lazy_itable_init=0,lazy_journal_init=0 "$PART_DEV"
+    mount "$PART_DEV" "$SLOT_MNT"
     rsync -aHAX --numeric-ids --exclude=/srv/chroot-template/var/* "$ROOTFS/" "$SLOT_MNT/"
     # runtime mountpoints used by the gha services
     mkdir -p "$SLOT_MNT/srv/chroot" "$SLOT_MNT/data"
     umount_all "$SLOT_MNT"
+    unmap_partition
 done
+
+log "Creating empty DATA partition"
+map_partition "$IMG" 4
+mkfs.ext4 -q -L data -E lazy_itable_init=0,lazy_journal_init=0 "$PART_DEV"
+unmap_partition
 
 # --- boot partition ---
 log "Populating boot partition"
@@ -83,7 +91,8 @@ sed -e "s|@CMDLINE@|$CMDLINE|" /input/boot.cmd > "$WORK/boot.cmd.rendered"
 mkimage -A arm64 -O linux -T script -C none -a 0 -e 0 \
     -d "$WORK/boot.cmd.rendered" "$WORK/boot.scr" >/dev/null
 
-mount "$P1" "$BOOT_MNT"
+map_partition "$IMG" 1
+mount "$PART_DEV" "$BOOT_MNT"
 for S in a b; do
     cp "$BOOT_MNT_STAGING/Image"     "$BOOT_MNT/Image.$S"
     cp "$BOOT_MNT_STAGING/initramfs" "$BOOT_MNT/initramfs.$S"
@@ -91,6 +100,7 @@ for S in a b; do
 done
 cp "$WORK/boot.scr" "$BOOT_MNT/boot.scr"
 umount_all "$BOOT_MNT"
+unmap_partition
 
 # --- U-Boot at 8KiB: fixed BROM load address for sunxi SPL ---
 UBOOT_BIN=$(find "$ROOTFS/usr/share/u-boot" "$ROOTFS/lib" -name 'u-boot-sunxi-with-spl.bin' 2>/dev/null | grep -i pine | first_line)
@@ -100,7 +110,7 @@ log "Writing U-Boot ($(du -h "$UBOOT_BIN" | awk '{print $1}')) at offset 8KiB"
 dd if="$UBOOT_BIN" of="$IMG" bs=1024 seek=8 conv=notrunc,fsync status=none
 
 sync
-losetup -d "$LOOPDEV" && trap - EXIT INT TERM
+trap - EXIT INT TERM
 
 # --- outputs ---
 OUT="/output"
@@ -112,7 +122,7 @@ sha256sum "$IMG.gz" > "$IMG.gz.sha256"
 # boot-assets bundle (unsuffixed names; ab-flash renames them to the target slot).
 UPDATE="$WORK/slot-update.img"
 truncate -s "${SIZE_SLOT}M" "$UPDATE"
-UPLOOP=$(losetup --find --show --partscan "$UPDATE")
+UPLOOP=$(losetup --find --show "$UPDATE")
 mkfs.ext4 -q -L slot-x "$UPLOOP"
 mount "$UPLOOP" "$SLOT_MNT"
 rsync -aHAX --numeric-ids --exclude=/srv/chroot-template/var/* "$ROOTFS/" "$SLOT_MNT/"

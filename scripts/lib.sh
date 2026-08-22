@@ -20,6 +20,21 @@ die() { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 # sed consumes all input, so pipelines into this helper never die with 141.
 first_line() { sed -n '1p'; }
 
+# Map one partition of an image as a standalone loop device over its byte range.
+# Works regardless of loop.max_part (no partition scanning involved).
+# Sets PART_DEV; caller unmaps via unmap_partition.
+map_partition() {
+    # map_partition <img> <partnum-1-based>
+    local img="$1" n="$2"
+    read -r PART_START PART_SECTORS <<<"$(sfdisk -J "$img" \
+        | jq -r ".partitiontable.partitions[$((n-1))] | \"\(.start) \(.size)\"")"
+    [ -n "$PART_START" ] && [ "$PART_START" != "null" ] || die "partition $n not found in $img"
+    PART_DEV=$(losetup --find --show \
+        --offset $((PART_START * 512)) --sizelimit $((PART_SECTORS * 512)) "$img")
+}
+
+unmap_partition() { losetup -d "${PART_DEV:-}" 2>/dev/null || true; }
+
 need_env() {
     local v
     for v in "$@"; do
