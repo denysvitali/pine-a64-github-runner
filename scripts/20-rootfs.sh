@@ -51,8 +51,9 @@ log "Configuring mkinitfs features"
 MKI_DIR="$ROOTFS/usr/share/mkinitfs/features.d"
 [ -d "$MKI_DIR" ] || MKI_DIR="$ROOTFS/etc/mkinitfs/features.d"
 [ -d "$MKI_DIR" ] || die "mkinitfs features.d not found in rootfs"
-# custom feature ensuring overlay.ko lands in the initramfs
-printf 'overlay\n' > "$MKI_DIR/immutable.modules"
+# custom feature ensuring overlay.ko lands in the initramfs.
+# NOTE: entries are globs relative to /lib/modules/$KVER/ (mkinitfs feature_files)
+printf 'kernel/fs/overlayfs\n' > "$MKI_DIR/immutable.modules"
 cat > "$ROOTFS/etc/mkinitfs/mkinitfs.conf" <<EOF
 features="base ext4 kms mmc immutable"
 disable_kms_modules=no
@@ -66,8 +67,8 @@ chroot "$ROOTFS" /sbin/mkinitfs -c /etc/mkinitfs/mkinitfs.conf "$KVER"
 # mkinitfs names output by flavor (e.g. boot/initramfs-lts), not by full KVER
 INITRAMFS=$(ls "$ROOTFS"/boot/initramfs-* 2>/dev/null | head -1)
 [ -f "$INITRAMFS" ] || die "mkinitfs produced no initramfs under $ROOTFS/boot/"
-for MOD in overlay ext4 mmc_block sunxi_mmc; do
-    if ! gzip -dc "$INITRAMFS" | cpio -t 2>/dev/null | grep -q "$MOD"; then
+for MOD in overlayfs/overlay fs/ext4/ext4 "mmc.*mmc_block" "sunxi[-_]mmc"; do
+    if ! gzip -dc "$INITRAMFS" | cpio -t 2>/dev/null | grep -Eq "$MOD"; then
         die "module '$MOD' missing from initramfs (board would not boot)"
     fi
 done
