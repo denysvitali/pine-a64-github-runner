@@ -63,12 +63,32 @@ EOF
 # regenerate with ours and assert the modules we depend on are present.
 log "Regenerating initramfs with immutable features"
 KVER=$(ls "$ROOTFS/lib/modules" | head -1)
-chroot "$ROOTFS" /sbin/mkinitfs -c /etc/mkinitfs/mkinitfs.conf "$KVER"
+{
+    echo "--- mkinitfs.conf:";   cat "$ROOTFS/etc/mkinitfs/mkinitfs.conf"
+    echo "--- immutable.modules:"; cat "$MKI_DIR/immutable.modules"
+    echo "--- features.d contents:"; ls "$ROOTFS/etc/mkinitfs/features.d/"
+    echo "--- overlayfs module present in tree:"
+    ls "$ROOTFS/lib/modules/$KVER/kernel/fs/overlayfs/" 2>&1
+} >&2
+
+if ! chroot "$ROOTFS" /sbin/mkinitfs -c /etc/mkinitfs/mkinitfs.conf "$KVER"; then
+    die "mkinitfs exited nonzero"
+fi
+
 # mkinitfs names output by flavor (e.g. boot/initramfs-lts), not by full KVER
 INITRAMFS=$(ls "$ROOTFS"/boot/initramfs-* 2>/dev/null | head -1)
 [ -f "$INITRAMFS" ] || die "mkinitfs produced no initramfs under $ROOTFS/boot/"
+log "initramfs size: $(du -h "$INITRAMFS" | awk '{print $1}')"
+
+LIST="$WORK/initramfs.list"
+gzip -dc "$INITRAMFS" 2>&1 | cpio -t > "$LIST" 2>"$WORK/cpio.err" || true
+log "initramfs entries: $(wc -l < "$LIST")"
+if [ -s "$WORK/cpio.err" ]; then warn "cpio stderr: $(head -3 "$WORK/cpio.err")"; fi
+echo "--- relevant modules in initramfs:" >&2
+grep -E 'overlay|ext4|mmc|sunxi' "$LIST" | head -20 >&2
+
 for MOD in overlayfs/overlay fs/ext4/ext4 "mmc.*mmc_block" "sunxi[-_]mmc"; do
-    if ! gzip -dc "$INITRAMFS" | cpio -t 2>/dev/null | grep -Eq "$MOD"; then
+    if ! grep -Eq "$MOD" "$LIST"; then
         die "module '$MOD' missing from initramfs (board would not boot)"
     fi
 done
