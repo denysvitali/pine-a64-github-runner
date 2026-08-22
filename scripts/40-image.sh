@@ -135,7 +135,8 @@ trap - EXIT INT TERM
 OUT="/output"
 log "Compressing artifacts"
 pigz -kf "$IMG"
-sha256sum "$IMG.gz" > "$IMG.gz.sha256"
+# checksum files carry bare filenames so they verify from any cwd
+(cd "$WORK" && sha256sum sdcard.img.gz) > "$IMG.gz.sha256"
 
 # single-slot update payload for ab-flash: a ready-made ext4 slot image plus a
 # boot-assets bundle (unsuffixed names; ab-flash renames them to the target slot).
@@ -149,7 +150,7 @@ mkdir -p "$SLOT_MNT/srv/chroot" "$SLOT_MNT/data"
 umount_all "$SLOT_MNT"
 losetup -d "$UPLOOP"
 pigz -kf "$UPDATE"
-sha256sum "$UPDATE.gz" > "$UPDATE.gz.sha256"
+(cd "$WORK" && sha256sum slot-update.img.gz) > "$UPDATE.gz.sha256"
 
 BOOT_ASSETS="$WORK/boot-assets"
 rm -rf "$BOOT_ASSETS"
@@ -177,7 +178,7 @@ built: $(date -u '+%Y-%m-%d %H:%M:%SZ')
 apply: doas ab-flash sdcard_update.tar.gz && reboot
 EOF
 tar -czf "$OUT/sdcard_update.tar.gz" -C "$WORK" sdcard_update
-sha256sum "$OUT/sdcard_update.tar.gz" > "$OUT/sdcard_update.tar.gz.sha256"
+(cd "$OUT" && sha256sum sdcard_update.tar.gz) > "$OUT/sdcard_update.tar.gz.sha256"
 
 cat > "$OUT/versions.txt" <<EOF
 project: pine-a64-gh-runner
