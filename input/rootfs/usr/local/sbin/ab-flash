@@ -1,0 +1,58 @@
+#!/bin/sh
+# A/B slot update. Usage: ab-flash <sdcard_update.tar.gz>
+# Bundle contents: manifest.txt, slot.img.gz(.sha256), boot-assets.tar.gz(.sha256)
+#
+# Flashes the INACTIVE rootfs slot with the new image, installs its kernel as
+# Image.<target>, then flips the boot marker atomically.
+# Rollback at any time: gha-slot-select a   (or delete /boot/boot_slot_b)
+
+set -eu
+
+BUNDLE=$1
+[ -r "$BUNDLE" ] || { echo "cannot read $BUNDLE" >&2; exit 1; }
+TMP=$(mktemp -d /tmp/ab-flash.XXXXXX)
+trap 'rm -rf "$TMP"' EXIT INT TERM
+
+BOOT_MNT=/boot
+mkdir -p "$BOOT_MNT"
+mount /dev/mmcblk0p1 "$BOOT_MNT"
+
+if [ -e "$BOOT_MNT/boot_slot_b" ]; then
+    ACTIVE=b; TARGET=a; TARGET_PART=/dev/mmcblk0p2
+else
+    ACTIVE=a; TARGET=b; TARGET_PART=/dev/mmcblk0p3
+fi
+echo "active slot: $ACTIVE -> flashing target: $TARGET ($TARGET_PART)"
+
+echo "extracting bundle..."
+tar -xzf "$BUNDLE" -C "$TMP"
+
+verify() {
+    f=$1
+    [ -f "$TMP/$f.sha256" ] || { echo "missing $f.sha256" >&2; exit 1; }
+    echo "$(awk '{print $1}' "$TMP/$f.sha256")  $TMP/$f" | sha256sum -c - >/dev/null \
+        || { echo "sha256 mismatch for $f" >&2; exit 1; }
+}
+verify slot.img.gz
+verify boot-assets.tar.gz
+
+echo "writing new rootfs to $TARGET_PART (this takes a few minutes)..."
+gzip -dc "$TMP/slot.img.gz" | dd of="$TARGET_PART" bs=4M conv=fsync status=none
+
+echo "installing boot assets for slot $TARGET..."
+tar -xzf "$TMP/boot-assets.tar.gz" -C "$TMP"
+cp "$TMP/boot-assets/Image"     "$BOOT_MNT/Image.$TARGET"
+cp "$TMP/boot-assets/initramfs" "$BOOT_MNT/initramfs.$TARGET"
+rm -rf "$BOOT_MNT/dtbs.$TARGET"
+cp -r "$TMP/boot-assets/dtbs"   "$BOOT_MNT/dtbs.$TARGET"
+
+if [ "$TARGET" = "b" ]; then
+    : > "$BOOT_MNT/boot_slot_b"
+else
+    rm -f "$BOOT_MNT/boot_slot_b"
+fi
+
+sync
+umount "$BOOT_MNT"
+echo "done. reboot to activate slot $TARGET."
+echo "rollback anytime with: doas /usr/local/sbin/gha-slot-select $ACTIVE"

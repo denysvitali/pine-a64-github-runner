@@ -1,0 +1,18 @@
+#!/bin/sh
+# Idempotent teardown of the ephemeral chroot overlay + binds.
+set -u
+
+M=/srv/chroot
+for p in "$M/opt/actions-runner" "$M/data" "$M/proc" "$M/sys" "$M/dev"; do
+    umount -R "$p" 2>/dev/null
+done
+umount -R "$M" 2>/dev/null
+
+# leftover overlay/tmpfs mounts (e.g. after crash) by fs name
+mounts=$(awk '$(NF-3) ~ /overlay|chroot-upper|runner-tree/ {print $2}' /proc/mounts | sort -r)
+for m in $mounts; do
+    case "$m" in /srv/chroot*|/run/gha*) umount -R "$m" 2>/dev/null;; esac
+done
+
+umount /run/gha/root-upper 2>/dev/null
+exit 0

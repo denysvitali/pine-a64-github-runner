@@ -1,0 +1,30 @@
+#!/sbin/openrc-run
+# Mounts and prepares the persistent /data tree.
+
+description="Prepare persistent /data for pine-a64-gh-runner"
+
+depend() {
+    need localmount
+    after bootmisc
+}
+
+start() {
+    ebegin "Preparing /data"
+    install -d -m 755 /data
+    install -d -m 700 -o root -g root /data/conf
+    install -d -m 750 -o 1001 -g 1001 /data/runner
+    install -d -m 755 /data/log /data/cache
+
+    if [ ! -f /data/conf/env.example ]; then
+        cat > /data/conf/env.example <<'EOF'
+# Copy to 'env' (root-owned, chmod 600) and fill in:
+GITHUB_URL=https://github.com/OWNER/REPO
+# Fine-grained PAT with Administration:read/write on the repo,
+# or classic PAT with repo scope. Used ONLY to mint registration tokens.
+GITHUB_TOKEN=github_pat_xxxxxxxxxxxx
+RUNNER_LABELS=pine64,aarch64,self-hosted
+EOF
+        chmod 600 /data/conf/env.example
+    fi
+    eend 0
+}

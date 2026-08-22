@@ -1,0 +1,15 @@
+#!/bin/sh
+# Force the active boot slot without flashing anything.
+# usage: gha-slot-select a|b     ('a' also = rollback)
+set -eu
+SLOT=${1:?usage: gha-slot-select a|b}
+mkdir -p /boot
+mount /dev/mmcblk0p1 /boot 2>/dev/null || true
+case "$SLOT" in
+    b) : > /boot/boot_slot_b ;;
+    a) rm -f /boot/boot_slot_b ;;
+    *) echo "unknown slot '$SLOT'" >&2; exit 1 ;;
+esac
+sync
+umount /boot 2>/dev/null || true
+echo "next boot will use slot $SLOT (reboot to apply)"

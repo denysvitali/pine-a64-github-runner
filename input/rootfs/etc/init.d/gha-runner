@@ -1,0 +1,25 @@
+#!/sbin/openrc-run
+# GitHub Actions ephemeral runner (supervised: exit == next cycle).
+# Runs the glibc runner inside a tmpfs-overlaid Debian chroot, as uid 1001.
+
+description="GitHub Actions ephemeral runner (Pine A64)"
+
+command="/usr/local/sbin/gha-runner-cycle.sh"
+supervisor=supervise-daemon
+pidfile="/run/gha-runner.pid"
+output_log="/data/log/runner.out"
+error_log="/data/log/runner.err"
+
+respawn_delay=15
+respawn_period=600
+respawn_max=5
+
+depend() {
+    need net localmount gha-data
+    use dns
+    after firewall nftables chronyd
+}
+
+stop_post() {
+    /usr/local/sbin/gha-chroot-teardown || true
+}

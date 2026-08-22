@@ -1,0 +1,14 @@
+# Debian chroot (glibc) packages for actions/runner and typical CI jobs
+ca-certificates
+curl
+git
+git-lfs
+jq
+unzip
+xz-utils
+libicu72
+liblttng-ust1
+libkrb5-3
+libssl3
+zlib1g
+locales

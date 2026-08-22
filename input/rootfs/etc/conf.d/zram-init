@@ -1,0 +1,6 @@
+# zram swap for low-RAM boards
+load_on_start=yes
+num_devices=1
+type=swap
+size=384
+algo=lz4

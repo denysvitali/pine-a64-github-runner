@@ -1,0 +1,22 @@
+# Alpine host packages (one per line, '#' comments allowed)
+alpine-base
+openrc
+linux-lts
+mkinitfs
+u-boot-sunxi
+openssh
+chrony
+nftables
+zram-init
+e2fsprogs
+dosfstools
+util-linux
+curl
+jq
+tar
+gzip
+parted
+rsync
+doas
+kmod
+mtools

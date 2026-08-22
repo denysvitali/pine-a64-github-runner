@@ -1,0 +1,35 @@
+#!/usr/sbin/nft -f
+# pine-a64-gh-runner baseline firewall.
+# Philosophy: lock down inbound + LAN-adjacent attack surface; keep job egress
+# functional (CI jobs download from arbitrary hosts).
+
+flush ruleset
+
+table inet filter {
+    set bogons {
+        type ipv4_addr
+        flags interval
+        elements = { 169.254.0.0/16, 100.64.0.0/10, 0.0.0.0/8 }
+    }
+
+    chain input {
+        type filter hook input priority 0; policy drop;
+        iif "lo" accept
+        ct state established,related accept
+        ip protocol icmp icmp type echo-request limit rate 4/second accept
+        tcp dport 22 ct state new limit rate 6/minute accept
+        counter drop
+    }
+
+    chain forward {
+        type filter hook forward priority 0; policy drop;
+    }
+
+    chain output {
+        type filter hook output priority 0; policy accept;
+        # never talk to link-local metadata / carrier NAT ranges
+        ip daddr @bogons counter drop
+        oif "lo" accept
+        ct state established,related accept
+    }
+}

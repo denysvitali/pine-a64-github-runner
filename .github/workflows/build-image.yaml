@@ -1,0 +1,93 @@
+name: Build Image and Create Release
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # weekly rebuild: keeps the pinned actions-runner under GitHub's
+    # 30-day freshness window for self-hosted runners
+    - cron: '0 3 * * 1'
+
+concurrency:
+  group: build-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build_and_release:
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare env and inputs
+        run: |
+          cp .env.example .env
+          mkdir -p input/config output input/build_cache
+          curl -fsSL "https://github.com/${{ github.repository_owner }}.keys" \
+            -o input/config/authorized_keys || echo "# no keys found" > input/config/authorized_keys
+
+          # optional repo Variables override build knobs
+          {
+            [ -n "${{ vars.RUNNER_VERSION }}" ] && echo "RUNNER_VERSION=${{ vars.RUNNER_VERSION }}"
+            [ -n "${{ vars.ALPINE_BRANCH }}" ] && echo "ALPINE_BRANCH=${{ vars.ALPINE_BRANCH }}"
+            [ -n "${{ vars.SIZE_SLOT }}" ] && echo "SIZE_SLOT=${{ vars.SIZE_SLOT }}"
+            [ -n "${{ vars.SIZE_IMAGE }}" ] && echo "SIZE_IMAGE=${{ vars.SIZE_IMAGE }}"
+            [ -n "${{ vars.DEFAULT_HOSTNAME }}" ] && echo "DEFAULT_HOSTNAME=${{ vars.DEFAULT_HOSTNAME }}"
+          } >> .env || true
+
+      - name: Build image (native arm64 container)
+        run: ./build_image.sh pine-a64-gh-runner-builder:${{ github.sha }}
+
+      - name: Smoke-test artifacts
+        run: |
+          set -euo pipefail
+          test -f output/sdcard.img.gz
+          test -f output/sdcard.img.gz.sha256
+          test -f output/sdcard_update.tar.gz
+          sha256sum -c output/sdcard.img.gz.sha256
+          tar -tzf output/sdcard_update.tar.gz | grep -q 'slot.img.gz'
+          tar -tzf output/sdcard_update.tar.gz | grep -q 'boot-assets.tar.gz'
+          cat output/versions.txt
+
+      - name: Upload artifacts (every run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdcard-images-${{ github.sha }}
+          path: |
+            output/sdcard.img.gz
+            output/sdcard.img.gz.sha256
+            output/sdcard_update.tar.gz
+            output/sdcard_update.tar.gz.sha256
+            output/versions.txt
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Compute release tag
+        id: meta
+        run: echo "tag=v$(date +'%Y-%m-%d')-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Create release
+        if: github.event_name != 'pull_request'
+        id: release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: "Image ${{ steps.meta.outputs.tag }}"
+          body_path: output/versions.txt
+          draft: false
+          prerelease: false
+          files: |
+            output/sdcard.img.gz
+            output/sdcard.img.gz.sha256
+            output/sdcard_update.tar.gz
+            output/sdcard_update.tar.gz.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

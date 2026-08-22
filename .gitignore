@@ -1,0 +1,8 @@
+.env
+output/
+input/build_cache/
+input/config/authorized_keys
+*.img
+*.img.gz
+*.tar.gz
+!input/**/*.tar.gz

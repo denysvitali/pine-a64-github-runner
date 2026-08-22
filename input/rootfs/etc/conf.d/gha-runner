@@ -1,0 +1,10 @@
+# pine-a64-gh-runner service tunables (edit on /data? no: this file is in the RO slot).
+# Runtime overrides belong to /data/conf/env.
+
+CHROOT_OVERLAY_SIZE=512M
+MINT_RETRIES=6
+
+# cgroup v2 limits for the runner process tree (OpenRC unified mode)
+rc_cgroup_mode="unified"
+rc_cgroup_memory_max="768M"
+rc_cgroup_cpu_weight="100"
