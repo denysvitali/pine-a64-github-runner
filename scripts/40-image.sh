@@ -9,6 +9,7 @@ ROOTFS="$WORK/rootfs"
 IMG="$WORK/sdcard.img"
 BOOT_MNT="$WORK/mnt-boot"
 SLOT_MNT="$WORK/mnt-slot"
+mkdir -p "$BOOT_MNT" "$SLOT_MNT"
 
 rm -f "$IMG"
 truncate -s "${SIZE_IMAGE}M" "$IMG"
