@@ -16,6 +16,10 @@ log() { printf '\033[1;32m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33mWARN: %s\033[0m\n' "$*" >&2; }
 die() { printf '\033[1;31mERROR: %s\033[0m\n' "$*" >&2; exit 1; }
 
+# head(1) closes the pipe early, SIGPIPE-killing producers under pipefail.
+# sed consumes all input, so pipelines into this helper never die with 141.
+first_line() { sed -n '1p'; }
+
 need_env() {
     local v
     for v in "$@"; do

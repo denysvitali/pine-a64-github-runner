@@ -56,9 +56,9 @@ BOOT_MNT_STAGING="$WORK/boot-staging"
 rm -rf "$BOOT_MNT_STAGING"
 mkdir -p "$BOOT_MNT_STAGING"
 
-KERNEL_REL=$(ls "$ROOTFS/lib/modules" | head -1)
+KERNEL_REL=$(ls "$ROOTFS/lib/modules" | first_line)
 VMLINUZ="$ROOTFS/boot/vmlinuz-lts"
-[ -f "$VMLINUZ" ] || VMLINUZ=$(find "$ROOTFS/lib/modules/$KERNEL_REL" -name 'vmlinuz-lts' | head -1)
+[ -f "$VMLINUZ" ] || VMLINUZ=$(find "$ROOTFS/lib/modules/$KERNEL_REL" -name 'vmlinuz-lts' | first_line)
 [ -f "$VMLINUZ" ] || die "kernel image not found"
 
 if file "$VMLINUZ" | grep -qi gzip; then
@@ -68,13 +68,13 @@ else
     cp "$VMLINUZ" "$BOOT_MNT_STAGING/Image"
 fi
 
-DTB_FILE=$(find "$ROOTFS" -name 'sun50i-a64-pine64.dtb' 2>/dev/null | head -1)
+DTB_FILE=$(find "$ROOTFS" -name 'sun50i-a64-pine64.dtb' 2>/dev/null | first_line)
 [ -n "$DTB_FILE" ] || die "sun50i-a64-pine64.dtb not found in rootfs"
 DTB_SRC=$(dirname "$DTB_FILE")
 mkdir -p "$BOOT_MNT_STAGING/dtbs/allwinner"
 cp "$DTB_SRC"/sun50i-a64-pine64*.dtb "$BOOT_MNT_STAGING/dtbs/allwinner/"
 
-INITRAMFS=$(ls "$ROOTFS"/boot/initramfs-* 2>/dev/null | head -1)
+INITRAMFS=$(ls "$ROOTFS"/boot/initramfs-* 2>/dev/null | first_line)
 [ -f "$INITRAMFS" ] || die "initramfs not found"
 cp "$INITRAMFS" "$BOOT_MNT_STAGING/initramfs"
 
@@ -93,8 +93,8 @@ cp "$WORK/boot.scr" "$BOOT_MNT/boot.scr"
 umount_all "$BOOT_MNT"
 
 # --- U-Boot at 8KiB: fixed BROM load address for sunxi SPL ---
-UBOOT_BIN=$(find "$ROOTFS/usr/share/u-boot" "$ROOTFS/lib" -name 'u-boot-sunxi-with-spl.bin' 2>/dev/null | grep -i pine | head -1)
-[ -f "$UBOOT_BIN" ] || UBOOT_BIN=$(find "$ROOTFS" -name 'u-boot-sunxi-with-spl.bin' 2>/dev/null | head -1)
+UBOOT_BIN=$(find "$ROOTFS/usr/share/u-boot" "$ROOTFS/lib" -name 'u-boot-sunxi-with-spl.bin' 2>/dev/null | grep -i pine | first_line)
+[ -f "$UBOOT_BIN" ] || UBOOT_BIN=$(find "$ROOTFS" -name 'u-boot-sunxi-with-spl.bin' 2>/dev/null | first_line)
 [ -f "$UBOOT_BIN" ] || die "u-boot-sunxi-with-spl.bin not found (need u-boot-sunxi package)"
 log "Writing U-Boot ($(du -h "$UBOOT_BIN" | awk '{print $1}')) at offset 8KiB"
 dd if="$UBOOT_BIN" of="$IMG" bs=1024 seek=8 conv=notrunc,fsync status=none

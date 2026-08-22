@@ -55,8 +55,9 @@ jobs:
           test -f output/sdcard.img.gz.sha256
           test -f output/sdcard_update.tar.gz
           sha256sum -c output/sdcard.img.gz.sha256
-          tar -tzf output/sdcard_update.tar.gz | grep -q 'slot.img.gz'
-          tar -tzf output/sdcard_update.tar.gz | grep -q 'boot-assets.tar.gz'
+          UPDATE_LIST=$(tar -tzf output/sdcard_update.tar.gz)
+          echo "$UPDATE_LIST" | grep -q 'slot.img.gz'
+          echo "$UPDATE_LIST" | grep -q 'boot-assets.tar.gz'
           cat output/versions.txt
 
       - name: Upload artifacts (every run)

@@ -62,7 +62,7 @@ EOF
 # linux-lts' install hook already produced an initramfs with default features;
 # regenerate with ours and assert the modules we depend on are present.
 log "Regenerating initramfs with immutable features"
-KVER=$(ls "$ROOTFS/lib/modules" | head -1)
+KVER=$(ls "$ROOTFS/lib/modules" | first_line)
 {
     echo "--- mkinitfs.conf:";   cat "$ROOTFS/etc/mkinitfs/mkinitfs.conf"
     echo "--- immutable.modules:"; cat "$MKI_DIR/immutable.modules"
@@ -76,7 +76,7 @@ if ! chroot "$ROOTFS" /sbin/mkinitfs -c /etc/mkinitfs/mkinitfs.conf "$KVER"; the
 fi
 
 # mkinitfs names output by flavor (e.g. boot/initramfs-lts), not by full KVER
-INITRAMFS=$(ls "$ROOTFS"/boot/initramfs-* 2>/dev/null | head -1)
+INITRAMFS=$(ls "$ROOTFS"/boot/initramfs-* 2>/dev/null | first_line)
 [ -f "$INITRAMFS" ] || die "mkinitfs produced no initramfs under $ROOTFS/boot/"
 log "initramfs size: $(du -h "$INITRAMFS" | awk '{print $1}')"
 
@@ -85,7 +85,7 @@ gzip -dc "$INITRAMFS" 2>&1 | cpio -t > "$LIST" 2>"$WORK/cpio.err" || true
 log "initramfs entries: $(wc -l < "$LIST")"
 if [ -s "$WORK/cpio.err" ]; then warn "cpio stderr: $(head -3 "$WORK/cpio.err")"; fi
 echo "--- relevant modules in initramfs:" >&2
-grep -E 'overlay|ext4|mmc|sunxi' "$LIST" | head -20 >&2
+grep -E 'overlay|ext4|mmc|sunxi' "$LIST" 2>/dev/null | sed -n '1,25p' >&2
 
 for MOD in overlayfs/overlay fs/ext4/ext4 "mmc.*mmc_block" "sunxi[-_]mmc"; do
     if ! grep -Eq "$MOD" "$LIST"; then
@@ -149,7 +149,7 @@ rc_add gha-runner default
 
 # --- version stamp ---
 RUNNER_VERSION=$(cat "$CACHE_PATH/runner_version")
-KERNEL_REL=$(ls "$ROOTFS/lib/modules" | head -1)
+KERNEL_REL=$(ls "$ROOTFS/lib/modules" | first_line)
 cat > "$ROOTFS/etc/gha-build-info" <<EOF
 project=pine-a64-gh-runner
 alpine_branch=$ALPINE_BRANCH
