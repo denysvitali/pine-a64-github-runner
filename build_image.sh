@@ -27,4 +27,5 @@ exec docker run \
     -v "$PWD/input:/input" \
     -v "$PWD/output:/output" \
     --env-file .env \
+    --env GITHUB_TOKEN \
     "$DOCKER_IMAGE"

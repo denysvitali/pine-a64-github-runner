@@ -44,6 +44,8 @@ jobs:
           } >> .env || true
 
       - name: Build image (native arm64 container)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: ./build_image.sh pine-a64-gh-runner-builder:${{ github.sha }}
 
       - name: Smoke-test artifacts

@@ -19,10 +19,18 @@ wait
 verify_sha256 "$CACHE_PATH/minirootfs.tar.gz" "$(cat "$CACHE_PATH/minirootfs.tar.gz.sha256" | awk '{print $1}')"
 
 # --- GitHub Actions runner ---
+# api.github.com is rate-limited per source IP; authenticate when a token is
+# provided (CI passes its own workflow token).
+API_AUTH=()
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+    API_AUTH=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+fi
+
 RUNNER_VERSION=${RUNNER_VERSION:-latest}
 if [ "$RUNNER_VERSION" = "latest" ]; then
     log "Querying latest actions-runner release"
-    RUNNER_VERSION=$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest | jq -r .tag_name)
+    RUNNER_VERSION=$(curl -fsSL "${API_AUTH[@]}" \
+        https://api.github.com/repos/actions/runner/releases/latest | jq -r .tag_name)
     RUNNER_VERSION=${RUNNER_VERSION#v}
 fi
 case "$RUNNER_VERSION" in
