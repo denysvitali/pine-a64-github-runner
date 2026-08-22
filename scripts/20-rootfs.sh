@@ -63,8 +63,9 @@ EOF
 log "Regenerating initramfs with immutable features"
 KVER=$(ls "$ROOTFS/lib/modules" | head -1)
 chroot "$ROOTFS" /sbin/mkinitfs -c /etc/mkinitfs/mkinitfs.conf "$KVER"
-INITRAMFS="$ROOTFS/boot/initramfs-$KVER"
-[ -f "$INITRAMFS" ] || die "mkinitfs did not produce boot/initramfs-$KVER"
+# mkinitfs names output by flavor (e.g. boot/initramfs-lts), not by full KVER
+INITRAMFS=$(ls "$ROOTFS"/boot/initramfs-* 2>/dev/null | head -1)
+[ -f "$INITRAMFS" ] || die "mkinitfs produced no initramfs under $ROOTFS/boot/"
 for MOD in overlay ext4 mmc_block sunxi_mmc; do
     if ! gzip -dc "$INITRAMFS" | cpio -t 2>/dev/null | grep -q "$MOD"; then
         die "module '$MOD' missing from initramfs (board would not boot)"
