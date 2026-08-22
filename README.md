@@ -45,7 +45,8 @@ The official [`actions/runner`](https://github.com/actions/runner/issues/801) is
 
 Every push to `master` (and a weekly cron) produces a release containing:
 
-* `sdcard.img.gz` — full image, flash this
+* `sdcard.img.zst` — full image, flash this (zstd; the two A/B slots dedup,
+  so it stays under GitHub's 2 GiB release-asset cap)
 * `sdcard_update.tar.gz` — on-device update bundle for `ab-flash`
 * `versions.txt`
 
@@ -54,7 +55,7 @@ PRs and manual dispatches upload the same files as workflow artifacts without cr
 ### 2. Flash
 
 ```sh
-gunzip -c sdcard.img.gz | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
+zstd -dc sdcard.img.zst | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
 ```
 
 (≥8 GB card recommended; slots are 2 GB each by default.)

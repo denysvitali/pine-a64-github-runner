@@ -11,6 +11,7 @@ RUN apk add --no-cache \
     gzip \
     pigz \
     xz \
+    zstd \
     rsync \
     findutils \
     coreutils \

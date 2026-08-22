@@ -134,9 +134,11 @@ trap - EXIT INT TERM
 # --- outputs ---
 OUT="/output"
 log "Compressing artifacts"
-pigz -kf "$IMG"
+# zstd --long dedups the near-identical A/B slots across their 2GiB distance;
+# gzip's 32KB window cannot, and the result exceeds GitHub's 2GiB release cap
+zstd -T0 --long=31 -qf "$IMG" -o "$IMG.zst"
 # checksum files carry bare filenames so they verify from any cwd
-(cd "$WORK" && sha256sum sdcard.img.gz) > "$IMG.gz.sha256"
+(cd "$WORK" && sha256sum sdcard.img.zst) > "$IMG.zst.sha256"
 
 # single-slot update payload for ab-flash: a ready-made ext4 slot image plus a
 # boot-assets bundle (unsuffixed names; ab-flash renames them to the target slot).
@@ -159,7 +161,7 @@ cp "$BOOT_MNT_STAGING"/Image "$BOOT_ASSETS/"
 cp "$BOOT_MNT_STAGING"/initramfs "$BOOT_ASSETS/"
 cp -r "$BOOT_MNT_STAGING"/dtbs "$BOOT_ASSETS/"
 
-mv "$IMG.gz" "$IMG.gz.sha256" "$OUT/"
+mv "$IMG.zst" "$IMG.zst.sha256" "$OUT/"
 
 # --- on-device update bundle consumed by ab-flash ---
 RUNNER_VERSION=$(cat "$CACHE_PATH/runner_version")

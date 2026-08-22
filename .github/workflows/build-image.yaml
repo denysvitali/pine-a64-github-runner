@@ -52,10 +52,10 @@ jobs:
         run: |
           set -euo pipefail
           cd output
-          test -f sdcard.img.gz
-          test -f sdcard.img.gz.sha256
+          test -f sdcard.img.zst
+          test -f sdcard.img.zst.sha256
           test -f sdcard_update.tar.gz
-          sha256sum -c sdcard.img.gz.sha256
+          sha256sum -c sdcard.img.zst.sha256
           sha256sum -c sdcard_update.tar.gz.sha256
           UPDATE_LIST=$(tar -tzf sdcard_update.tar.gz)
           echo "$UPDATE_LIST" | grep -q 'slot.img.gz'
@@ -67,8 +67,8 @@ jobs:
         with:
           name: sdcard-images-${{ github.sha }}
           path: |
-            output/sdcard.img.gz
-            output/sdcard.img.gz.sha256
+            output/sdcard.img.zst
+            output/sdcard.img.zst.sha256
             output/sdcard_update.tar.gz
             output/sdcard_update.tar.gz.sha256
             output/versions.txt
@@ -90,8 +90,8 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            output/sdcard.img.gz
-            output/sdcard.img.gz.sha256
+            output/sdcard.img.zst
+            output/sdcard.img.zst.sha256
             output/sdcard_update.tar.gz
             output/sdcard_update.tar.gz.sha256
         env:
