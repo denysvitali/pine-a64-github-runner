@@ -11,6 +11,54 @@ BOOT_MNT="$WORK/mnt-boot"
 SLOT_MNT="$WORK/mnt-slot"
 mkdir -p "$BOOT_MNT" "$SLOT_MNT"
 
+# --- boot assets staged up front so BOOT can be sized from real artifacts
+# (the immutable+kms initramfs is ~80MB; x2 slots overflows any guess) ---
+log "Staging boot assets"
+BOOT_MNT_STAGING="$WORK/boot-staging"
+rm -rf "$BOOT_MNT_STAGING"
+mkdir -p "$BOOT_MNT_STAGING"
+
+KERNEL_REL=$(ls "$ROOTFS/lib/modules" | first_line)
+VMLINUZ="$ROOTFS/boot/vmlinuz-lts"
+[ -f "$VMLINUZ" ] || VMLINUZ=$(find "$ROOTFS/lib/modules/$KERNEL_REL" -name 'vmlinuz-lts' | first_line)
+[ -f "$VMLINUZ" ] || die "kernel image not found"
+
+if file "$VMLINUZ" | grep -qi gzip; then
+    log "Kernel is gzip-compressed; uncompressing for booti"
+    gunzip -c "$VMLINUZ" > "$BOOT_MNT_STAGING/Image"
+else
+    cp "$VMLINUZ" "$BOOT_MNT_STAGING/Image"
+fi
+
+DTB_FILE=$(find "$ROOTFS" -name 'sun50i-a64-pine64.dtb' 2>/dev/null | first_line)
+[ -n "$DTB_FILE" ] || die "sun50i-a64-pine64.dtb not found in rootfs"
+DTB_SRC=$(dirname "$DTB_FILE")
+mkdir -p "$BOOT_MNT_STAGING/dtbs/allwinner"
+cp "$DTB_SRC"/sun50i-a64-pine64*.dtb "$BOOT_MNT_STAGING/dtbs/allwinner/"
+
+INITRAMFS=$(ls "$ROOTFS"/boot/initramfs-* 2>/dev/null | first_line)
+[ -f "$INITRAMFS" ] || die "initramfs not found"
+cp "$INITRAMFS" "$BOOT_MNT_STAGING/initramfs"
+
+# boot.cmd -> boot.scr with slot-aware logic
+sed -e "s|@CMDLINE@|$CMDLINE|" /input/boot.cmd > "$WORK/boot.cmd.rendered"
+mkimage -A arm64 -O linux -T script -C none -a 0 -e 0 \
+    -d "$WORK/boot.cmd.rendered" "$WORK/boot.scr" >/dev/null
+
+# geometry sanity: BOOT must hold Image+initramfs+dtbs twice (A/B) with FAT
+# slack; DATA needs breathing room
+BOOT_STAGED_KB=$(du -sk "$BOOT_MNT_STAGING" | awk '{print $1}')
+MIN_BOOT=$(( BOOT_STAGED_KB * 2 * 125 / 100 / 1024 + 16 ))
+if [ "$SIZE_BOOT" -lt "$MIN_BOOT" ]; then
+    warn "SIZE_BOOT=${SIZE_BOOT}M cannot fit A/B boot assets (${MIN_BOOT}M needed); bumping"
+    export SIZE_BOOT=$MIN_BOOT
+fi
+MIN_IMAGE=$(( SIZE_BOOT + SIZE_SLOT * 2 + 512 ))
+if [ "${SIZE_IMAGE:-0}" -lt "$MIN_IMAGE" ]; then
+    warn "SIZE_IMAGE=${SIZE_IMAGE}M cannot fit BOOT+2 slots+DATA; bumping to ${MIN_IMAGE}M"
+    export SIZE_IMAGE=$MIN_IMAGE
+fi
+
 rm -f "$IMG"
 truncate -s "${SIZE_IMAGE}M" "$IMG"
 
@@ -59,38 +107,8 @@ map_partition "$IMG" 4
 mkfs.ext4 -q -L data -E lazy_itable_init=0,lazy_journal_init=0 "$PART_DEV"
 unmap_partition
 
-# --- boot partition ---
+# --- boot partition (assets staged and size-guarded above) ---
 log "Populating boot partition"
-BOOT_MNT_STAGING="$WORK/boot-staging"
-rm -rf "$BOOT_MNT_STAGING"
-mkdir -p "$BOOT_MNT_STAGING"
-
-KERNEL_REL=$(ls "$ROOTFS/lib/modules" | first_line)
-VMLINUZ="$ROOTFS/boot/vmlinuz-lts"
-[ -f "$VMLINUZ" ] || VMLINUZ=$(find "$ROOTFS/lib/modules/$KERNEL_REL" -name 'vmlinuz-lts' | first_line)
-[ -f "$VMLINUZ" ] || die "kernel image not found"
-
-if file "$VMLINUZ" | grep -qi gzip; then
-    log "Kernel is gzip-compressed; uncompressing for booti"
-    gunzip -c "$VMLINUZ" > "$BOOT_MNT_STAGING/Image"
-else
-    cp "$VMLINUZ" "$BOOT_MNT_STAGING/Image"
-fi
-
-DTB_FILE=$(find "$ROOTFS" -name 'sun50i-a64-pine64.dtb' 2>/dev/null | first_line)
-[ -n "$DTB_FILE" ] || die "sun50i-a64-pine64.dtb not found in rootfs"
-DTB_SRC=$(dirname "$DTB_FILE")
-mkdir -p "$BOOT_MNT_STAGING/dtbs/allwinner"
-cp "$DTB_SRC"/sun50i-a64-pine64*.dtb "$BOOT_MNT_STAGING/dtbs/allwinner/"
-
-INITRAMFS=$(ls "$ROOTFS"/boot/initramfs-* 2>/dev/null | first_line)
-[ -f "$INITRAMFS" ] || die "initramfs not found"
-cp "$INITRAMFS" "$BOOT_MNT_STAGING/initramfs"
-
-# boot.cmd -> boot.scr with slot-aware logic
-sed -e "s|@CMDLINE@|$CMDLINE|" /input/boot.cmd > "$WORK/boot.cmd.rendered"
-mkimage -A arm64 -O linux -T script -C none -a 0 -e 0 \
-    -d "$WORK/boot.cmd.rendered" "$WORK/boot.scr" >/dev/null
 
 map_partition "$IMG" 1
 mount "$PART_DEV" "$BOOT_MNT"
