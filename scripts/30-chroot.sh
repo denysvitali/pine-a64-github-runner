@@ -61,15 +61,11 @@ grep -q '^runner:' "$CH/etc/passwd" || \
 grep -q '^1001:' "$CH/etc/group" || echo '1001:runner:' >> "$CH/etc/group"
 
 # actions-runner into /opt/actions-runner (config artifacts land on tmpfs upper at runtime)
+# official tarballs have no wrapper dir; contents go directly into the target
 log "Installing actions-runner v$RUNNER_VERSION into chroot"
-mkdir -p "$CH/opt"
-tar -xzf "$TARBALL" -C "$CH/opt"
-# official tarballs already extract to 'actions-runner/'; tolerate legacy layouts
-if [ ! -d "$CH/opt/actions-runner" ]; then
-    EXTRACTED=$(find "$CH/opt" -maxdepth 1 -type d -name 'actions-runner-*' | first_line)
-    [ -n "$EXTRACTED" ] || die "unexpected runner tarball layout: $(ls "$CH/opt")"
-    mv "$EXTRACTED" "$CH/opt/actions-runner"
-fi
+mkdir -p "$CH/opt/actions-runner"
+tar -xzf "$TARBALL" -C "$CH/opt/actions-runner"
+[ -x "$CH/opt/actions-runner/config.sh" ] || die "runner tarball layout unexpected: $(ls "$CH/opt/actions-runner" | first_line)"
 chmod +x "$CH/opt/actions-runner/config.sh" "$CH/opt/actions-runner/run.sh" "$CH/opt/actions-runner/env.sh"
 
 echo "$RUNNER_VERSION" > "$CH/opt/actions-runner/.runner-version"
