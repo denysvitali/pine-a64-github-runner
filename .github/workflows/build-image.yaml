@@ -38,6 +38,7 @@ jobs:
           {
             [ -n "${{ vars.RUNNER_VERSION }}" ] && echo "RUNNER_VERSION=${{ vars.RUNNER_VERSION }}"
             [ -n "${{ vars.ALPINE_BRANCH }}" ] && echo "ALPINE_BRANCH=${{ vars.ALPINE_BRANCH }}"
+            [ -n "${{ vars.BOARD }}" ] && echo "BOARD=${{ vars.BOARD }}"
             [ -n "${{ vars.SIZE_SLOT }}" ] && echo "SIZE_SLOT=${{ vars.SIZE_SLOT }}"
             [ -n "${{ vars.SIZE_IMAGE }}" ] && echo "SIZE_IMAGE=${{ vars.SIZE_IMAGE }}"
             [ -n "${{ vars.DEFAULT_HOSTNAME }}" ] && echo "DEFAULT_HOSTNAME=${{ vars.DEFAULT_HOSTNAME }}"

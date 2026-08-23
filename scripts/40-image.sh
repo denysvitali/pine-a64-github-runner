@@ -5,6 +5,17 @@ source /scripts/lib.sh
 
 need_env SIZE_BOOT SIZE_SLOT SIZE_IMAGE CMDLINE ROOT_OVERLAY_SIZE CHROOT_OVERLAY_SIZE
 
+# Board profile: picks both the U-Boot binary and the kernel DTB so they stay
+# coherent. linux-sunxi Pine64 guidance: the pine64_plus target covers every
+# Pine64 board — non-plus variants are detected at runtime by U-Boot itself.
+case "${BOARD:-plain}" in
+    plain) UBOOT_BOARD=pine64_plus; FDTFILE=sun50i-a64-pine64.dtb ;;
+    plus)  UBOOT_BOARD=pine64_plus; FDTFILE=sun50i-a64-pine64-plus.dtb ;;
+    lts)   UBOOT_BOARD=pine64-lts;  FDTFILE=sun50i-a64-pine64-lts.dtb ;;
+    *)     die "BOARD must be plain|plus|lts (got '$BOARD')" ;;
+esac
+log "Board profile '${BOARD:-plain}': u-boot '$UBOOT_BOARD', kernel DT '$FDTFILE'"
+
 ROOTFS="$WORK/rootfs"
 IMG="$WORK/sdcard.img"
 BOOT_MNT="$WORK/mnt-boot"
@@ -40,8 +51,13 @@ INITRAMFS=$(ls "$ROOTFS"/boot/initramfs-* 2>/dev/null | first_line)
 [ -f "$INITRAMFS" ] || die "initramfs not found"
 cp "$INITRAMFS" "$BOOT_MNT_STAGING/initramfs"
 
-# boot.cmd -> boot.scr with slot-aware logic
-sed -e "s|@CMDLINE@|$CMDLINE|" /input/boot.cmd > "$WORK/boot.cmd.rendered"
+# boot.cmd -> boot.scr; placeholders come from env + the BOARD profile
+sed -e "s|@CMDLINE@|$CMDLINE|g" \
+    -e "s|@ROOT_OVERLAY_SIZE@|$ROOT_OVERLAY_SIZE|g" \
+    -e "s|@FDTFILE@|$FDTFILE|g" /input/boot.cmd > "$WORK/boot.cmd.rendered"
+if grep -q '@' "$WORK/boot.cmd.rendered"; then
+    die "unsubstituted placeholder left in boot.cmd"
+fi
 mkimage -A arm64 -O linux -T script -C none -a 0 -e 0 \
     -d "$WORK/boot.cmd.rendered" "$WORK/boot.scr" >/dev/null
 
@@ -122,9 +138,13 @@ umount_all "$BOOT_MNT"
 unmap_partition
 
 # --- U-Boot at 8KiB: fixed BROM load address for sunxi SPL ---
-UBOOT_BIN=$(find "$ROOTFS/usr/share/u-boot" "$ROOTFS/lib" -name 'u-boot-sunxi-with-spl.bin' 2>/dev/null | grep -i pine | first_line)
-[ -f "$UBOOT_BIN" ] || UBOOT_BIN=$(find "$ROOTFS" -name 'u-boot-sunxi-with-spl.bin' 2>/dev/null | first_line)
-[ -f "$UBOOT_BIN" ] || die "u-boot-sunxi-with-spl.bin not found (need u-boot-sunxi package)"
+# Alpine ships one dir per board under /usr/share/u-boot/ and a wrong-family
+# binary boots far enough to die in SPL DRAM init ("DRAM: 0 MiB"), so the dir
+# comes from the BOARD profile (above), never from a find/grep lottery, and is
+# asserted to target this SoC before it lands on the image.
+UBOOT_BIN="$ROOTFS/usr/share/u-boot/$UBOOT_BOARD/u-boot-sunxi-with-spl.bin"
+[ -f "$UBOOT_BIN" ] || die "no u-boot for '$UBOOT_BOARD' (have: $(ls "$ROOTFS/usr/share/u-boot" | tr '\n' ' '))"
+grep -aq 'sun50i-a64' "$UBOOT_BIN" || die "u-boot binary for '$UBOOT_BOARD' does not target sun50i-a64"
 log "Writing U-Boot ($(du -h "$UBOOT_BIN" | awk '{print $1}')) at offset 8KiB"
 dd if="$UBOOT_BIN" of="$IMG" bs=1024 seek=8 conv=notrunc,fsync status=none
 
@@ -184,6 +204,7 @@ tar -czf "$OUT/sdcard_update.tar.gz" -C "$WORK" sdcard_update
 
 cat > "$OUT/versions.txt" <<EOF
 project: pine-a64-gh-runner
+board_profile: ${BOARD:-plain} (u-boot $UBOOT_BOARD, dtb $FDTFILE)
 alpine_branch: $ALPINE_BRANCH
 kernel: $KERNEL_REL
 actions_runner: v$RUNNER_VERSION

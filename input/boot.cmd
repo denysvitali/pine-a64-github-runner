@@ -25,7 +25,7 @@ setenv boot_part "${active_part}"
 setenv assets_ok 0
 
 if load mmc 0:${boot_part} ${kernel_addr_r} Image.${boot_slot}; then
-    if load mmc 0:${boot_part} ${fdt_addr_r} dtbs.${boot_slot}/allwinner/sun50i-a64-pine64.dtb; then
+    if load mmc 0:${boot_part} ${fdt_addr_r} dtbs.${boot_slot}/allwinner/@FDTFILE@; then
         if load mmc 0:${boot_part} ${ramdisk_addr_r} initramfs.${boot_slot}; then
             setenv assets_ok 1
         fi
@@ -42,7 +42,7 @@ if test "${assets_ok}" != "1"; then
         setenv boot_part 2
     fi
     if load mmc 0:${boot_part} ${kernel_addr_r} Image.${boot_slot}; then
-        if load mmc 0:${boot_part} ${fdt_addr_r} dtbs.${boot_slot}/allwinner/sun50i-a64-pine64.dtb; then
+        if load mmc 0:${boot_part} ${fdt_addr_r} dtbs.${boot_slot}/allwinner/@FDTFILE@; then
             if load mmc 0:${boot_part} ${ramdisk_addr_r} initramfs.${boot_slot}; then
                 setenv assets_ok 1
             fi
