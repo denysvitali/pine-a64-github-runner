@@ -34,12 +34,48 @@ VMLINUZ="$ROOTFS/boot/vmlinuz-lts"
 [ -f "$VMLINUZ" ] || VMLINUZ=$(find "$ROOTFS/lib/modules/$KERNEL_REL" -name 'vmlinuz-lts' | first_line)
 [ -f "$VMLINUZ" ] || die "kernel image not found"
 
-if file "$VMLINUZ" | grep -qi gzip; then
-    log "Kernel is gzip-compressed; uncompressing for booti"
-    gunzip -c "$VMLINUZ" > "$BOOT_MNT_STAGING/Image"
-else
+# booti needs a RAW arm64 Image ("ARM\x64" magic at byte 56). Alpine ships
+# vmlinuz-lts as an EFI zboot PE wrapper around a gzip'd Image, so detect by
+# content: raw Image passes through, anything else gets its gzip payload carved.
+image_magic() {
+    [ "$(dd if="$1" bs=1 skip=56 count=4 status=none | od -An -tx1 | tr -d ' \n')" = "41524d64" ]
+}
+
+if image_magic "$VMLINUZ"; then
+    log "Kernel is a raw arm64 Image"
     cp "$VMLINUZ" "$BOOT_MNT_STAGING/Image"
+else
+    # Payload offset first from the zboot header ('zimg' + u32 LE), else a full
+    # hex scan for the gzip stream. BusyBox grep lacks -b, hence od/xxd/awk.
+    ZIMG_HEX=$(dd if="$VMLINUZ" bs=512 count=1 status=none | od -An -tx1 | tr -d ' \n')
+    ZIMG_OFF=$(awk 'BEGIN { i = index(ARGV[1], "7a696d67"); print (i > 0 && (i-1) % 2 == 0) ? (i-1)/2 : -1 }' "$ZIMG_HEX")
+    GZ_OFF=-1
+    if [ "$ZIMG_OFF" -ge 0 ]; then
+        HEX=$(dd if="$VMLINUZ" bs=1 skip=$((ZIMG_OFF + 4)) count=4 status=none | od -An -tx1 | tr -d ' \n')
+        CAND=$(( 16#${HEX:6:2}${HEX:4:2}${HEX:2:2}${HEX:0:2} ))
+        if [ "$(dd if="$VMLINUZ" bs=1 skip=$CAND count=3 status=none | od -An -tx1 | tr -d ' \n')" = "1f8b08" ]; then
+            GZ_OFF=$CAND
+        fi
+    fi
+    if [ "$GZ_OFF" -lt 0 ]; then
+        GZ_OFF=$(xxd -p "$VMLINUZ" | tr -d '\n' \
+            | awk '{ i = index($0, "1f8b08") - 1; if (i >= 0 && i % 2 == 0) print i / 2 }' | head -n1)
+        [ -n "$GZ_OFF" ] || die "vmlinuz has no raw-Image magic, zboot header, or gzip payload; cannot stage for booti"
+    fi
+
+    log "Kernel is gzip-wrapped (payload at offset ${GZ_OFF}); unwrapping for booti"
+    BLK=4096
+    set +e
+    { dd if="$VMLINUZ" bs=$BLK skip=$((GZ_OFF / BLK)) status=none \
+        | dd bs=1 skip=$((GZ_OFF % BLK)) status=none; } | gunzip -c > "$BOOT_MNT_STAGING/Image"
+    RC=$?
+    set -e
+    # rc=2 is gzip's "trailing garbage ignored" — expected after a wrapped member
+    [ "$RC" -le 2 ] || die "gunzip failed on wrapped kernel (rc=$RC)"
 fi
+
+image_magic "$BOOT_MNT_STAGING/Image" || die "staged Image lacks the arm64 Image magic; refusing to hand it to booti"
+log "Staged raw arm64 Image ($(du -h "$BOOT_MNT_STAGING/Image" | awk '{print $1}'))"
 
 DTB_FILE=$(find "$ROOTFS" -name 'sun50i-a64-pine64.dtb' 2>/dev/null | first_line)
 [ -n "$DTB_FILE" ] || die "sun50i-a64-pine64.dtb not found in rootfs"

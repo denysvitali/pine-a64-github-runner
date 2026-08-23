@@ -78,7 +78,7 @@ jobs:
 
       - name: Compute release tag
         id: meta
-        run: echo "tag=v$(date +'%Y-%m-%d')-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        run: echo "tag=v$(date -u +'%Y-%m-%d-%H%M%S')-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Create release
         if: github.event_name != 'pull_request'
