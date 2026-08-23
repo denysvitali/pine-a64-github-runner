@@ -54,8 +54,18 @@ MKI_DIR="$ROOTFS/usr/share/mkinitfs/features.d"
 # custom feature ensuring overlay.ko lands in the initramfs.
 # NOTE: entries are globs relative to /lib/modules/$KVER/ (mkinitfs feature_files)
 printf 'kernel/fs/overlayfs\n' > "$MKI_DIR/immutable.modules"
+# sunxi-pmic feature: the SD slot's vmmc-supply is AXP803 dcdc1 behind the RSB
+# bus (sun50i-a64-pine64.dtb wires it that way even on non-plus boards). All of
+# sunxi-rsb -> axp20x-rsb -> axp20x -> axp20x-regulator are =m; without them
+# mmc0's probe defers forever and /dev/mmcblk0p2 never appears.
+printf '%s\n' \
+    'kernel/drivers/bus/sunxi-rsb.ko*' \
+    'kernel/drivers/mfd/axp20x.ko*' \
+    'kernel/drivers/mfd/axp20x-rsb.ko*' \
+    'kernel/drivers/regulator/axp20x-regulator.ko*' \
+    > "$MKI_DIR/sunxi-pmic.modules"
 cat > "$ROOTFS/etc/mkinitfs/mkinitfs.conf" <<EOF
-features="base ext4 kms mmc immutable"
+features="base ext4 kms mmc immutable sunxi-pmic"
 disable_kms_modules=no
 EOF
 
@@ -66,6 +76,7 @@ KVER=$(ls "$ROOTFS/lib/modules" | first_line)
 {
     echo "--- mkinitfs.conf:";   cat "$ROOTFS/etc/mkinitfs/mkinitfs.conf"
     echo "--- immutable.modules:"; cat "$MKI_DIR/immutable.modules"
+    echo "--- sunxi-pmic.modules:"; cat "$MKI_DIR/sunxi-pmic.modules"
     echo "--- features.d contents:"; ls "$ROOTFS/etc/mkinitfs/features.d/"
     echo "--- overlayfs module present in tree:"
     ls "$ROOTFS/lib/modules/$KVER/kernel/fs/overlayfs/" 2>&1
@@ -87,7 +98,8 @@ if [ -s "$WORK/cpio.err" ]; then warn "cpio stderr: $(head -3 "$WORK/cpio.err")"
 echo "--- relevant modules in initramfs:" >&2
 grep -E 'overlay|ext4|mmc|sunxi' "$LIST" 2>/dev/null | sed -n '1,25p' >&2
 
-for MOD in overlayfs/overlay fs/ext4/ext4 "mmc.*mmc_block" "sunxi[-_]mmc"; do
+for MOD in overlayfs/overlay fs/ext4/ext4 "mmc.*mmc_block" "sunxi[-_]mmc" \
+           "bus/sunxi-rsb" "mfd/axp20x-rsb" "mfd/axp20x.ko" "regulator/axp20x-regulator"; do
     if ! grep -Eq "$MOD" "$LIST"; then
         die "module '$MOD' missing from initramfs (board would not boot)"
     fi
