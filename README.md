@@ -75,7 +75,7 @@ The `admin` account's shell is always `/bin/ash`; onboarding is not present in
 optional so you can always inspect or recover the device first. Start it explicitly:
 
 ```sh
-doas gha-setup
+doas /usr/local/sbin/gha-setup
 ```
 
 The wizard asks for your SSH public key, repository URL, the short-lived runner
@@ -92,13 +92,17 @@ ssh admin@DEVICE_IP
 The registration token is stored root-only only until the first successful
 registration, then deleted. The resulting runner identity is kept under
 `/data/runner/config` so each clean job cycle does not need another token. Run
-`doas gha-setup` later to replace the key, local password, or runner registration.
+`doas /usr/local/sbin/gha-setup` later to replace the key, local password, or runner registration.
+
+For unrestricted recovery administration, run `doas -s` and enter the current
+`admin` password. Setup, A/B updates, slot selection, reboot, and poweroff also
+have narrow passwordless rules when invoked by their absolute paths.
 
 > **Security note:** `admin` / `pine64-setup` is public and intentionally works
 > only until onboarding completes. Keep a new device on a trusted local network,
 > complete setup immediately, and do not expose TCP port 22 to the internet
 > before then. Setup never replaces the login shell: if it is interrupted or
-> fails, reconnect normally and retry `doas gha-setup`. The Actions runner does
+> fails, reconnect normally and retry `doas /usr/local/sbin/gha-setup`. The Actions runner does
 > not start until onboarding is complete.
 
 The SSH host key is generated on the physical device during its first boot and
@@ -113,7 +117,7 @@ boot. Trigger a job tagged with your labels.
 ### Recovery shell
 
 Setup is never a forced login shell. Before onboarding, sign in with the
-temporary password and simply decline to run `doas gha-setup`; after onboarding,
+temporary password and simply decline to run setup; after onboarding,
 sign in with the installed SSH key. A failed or interrupted wizard can always be
 rerun from that shell.
 
@@ -123,11 +127,11 @@ public key entered in the wizard, apply a current update bundle, and reboot:
 
 ```sh
 ssh -i /path/to/private_key admin@DEVICE_IP
-doas ab-flash /tmp/sdcard_update.tar.gz
-doas reboot
+doas /usr/local/sbin/ab-flash /tmp/sdcard_update.tar.gz
+doas /sbin/reboot
 ```
 
-Then reconnect with the same key and run `doas gha-setup` with a fresh runner
+Then reconnect with the same key and run `doas /usr/local/sbin/gha-setup` with a fresh runner
 registration token. Reflashing the DATA partition is not required.
 
 ---
@@ -137,14 +141,14 @@ registration token. Reflashing the DATA partition is not required.
 ```sh
 scp output/sdcard_update.tar.gz admin@device:/tmp/
 ssh admin@device
-doas ab-flash /tmp/sdcard_update.tar.gz
-doas reboot
+doas /usr/local/sbin/ab-flash /tmp/sdcard_update.tar.gz
+doas /sbin/reboot
 ```
 
 Rollback if the new slot misbehaves:
 
 ```sh
-doas gha-slot-select a && doas reboot   # 'b' to go back forward
+doas /usr/local/sbin/gha-slot-select a && doas /sbin/reboot   # 'b' to go back forward
 ```
 
 ---

@@ -29,7 +29,12 @@ sed -i "s|^admin:[^:]*:|admin:${ADMIN_BOOTSTRAP_HASH}:|" "$R/etc/shadow"
 
 mkdir -p "$R/etc/doas.d"
 cat > "$R/etc/doas.d/gha.conf" <<'EOF'
+# General recovery access requires the admin user's current password.
+permit admin as root
+# Last matching rule wins: routine appliance operations stay passwordless.
 permit nopass admin cmd /usr/local/sbin/ab-flash
 permit nopass admin cmd /usr/local/sbin/gha-slot-select
 permit nopass admin cmd /usr/local/sbin/gha-setup
+permit nopass admin cmd /sbin/reboot
+permit nopass admin cmd /sbin/poweroff
 EOF

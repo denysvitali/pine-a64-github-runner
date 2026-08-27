@@ -233,7 +233,7 @@ alpine_branch: $ALPINE_BRANCH
 kernel: $KERNEL_REL
 actions_runner: v$RUNNER_VERSION
 built: $(date -u '+%Y-%m-%d %H:%M:%SZ')
-apply: doas ab-flash sdcard_update.tar.gz && reboot
+apply: doas /usr/local/sbin/ab-flash sdcard_update.tar.gz && doas /sbin/reboot
 EOF
 tar -czf "$OUT/sdcard_update.tar.gz" -C "$WORK" sdcard_update
 (cd "$OUT" && sha256sum sdcard_update.tar.gz) > "$OUT/sdcard_update.tar.gz.sha256"

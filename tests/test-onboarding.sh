@@ -28,7 +28,8 @@ reject_pattern() {
 # Recovery is always available, setup never accepts a PAT, and the one-time
 # listener retains registration credentials while still exiting after one job.
 test ! -e "$ROOT/input/rootfs/usr/local/sbin/gha-onboard-shell"
-grep -q 'doas gha-setup' "$ROOT/input/rootfs/etc/motd"
+grep -q 'doas /usr/local/sbin/gha-setup' "$ROOT/input/rootfs/etc/motd"
+grep -q 'doas -s' "$ROOT/input/rootfs/etc/motd"
 grep -q 'Runner registration token' "$SETUP"
 reject_pattern 'GITHUB_TOKEN' "$SETUP"
 reject_pattern 'github_pat_' "$SETUP"
@@ -53,6 +54,10 @@ CHROOT_ROOT="$TMP/mock-root" bash -c 'source "$1"' _ "$ROOT/scripts/add-users.sh
 grep -qx 'admin:x:1000:1000::/home/admin:/bin/ash' "$TMP/mock-root/etc/passwd"
 grep -qx 'admin:x:1000:' "$TMP/mock-root/etc/group"
 grep -Fqx 'admin:$6$ghaPineA64Setup$n/UnU5.f8da6riPYe9aiPFM1or18CsMXVG3pT1ZCRYLMFhlVlvln4q35fIbEEXb4WlmElxHTL4kyTiJSTd.HF.::0:::::' "$TMP/mock-root/etc/shadow"
+grep -qx 'permit admin as root' "$TMP/mock-root/etc/doas.d/gha.conf"
+grep -qx 'permit nopass admin cmd /usr/local/sbin/gha-setup' "$TMP/mock-root/etc/doas.d/gha.conf"
+grep -qx 'permit nopass admin cmd /usr/local/sbin/ab-flash' "$TMP/mock-root/etc/doas.d/gha.conf"
+grep -qx 'permit nopass admin cmd /sbin/reboot' "$TMP/mock-root/etc/doas.d/gha.conf"
 
 run_apply() {
     GHA_CONF_DIR="$TMP/conf" \

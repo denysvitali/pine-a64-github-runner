@@ -87,7 +87,7 @@ if [ -s "$PERSIST_CONFIG/.runner" ] && [ -s "$PERSIST_CONFIG/.credentials" ]; th
 else
     TOKEN_FILE=/data/conf/registration-token
     [ -s "$TOKEN_FILE" ] || {
-        echo "FATAL: runner is not registered; run 'doas gha-setup' with a fresh registration token"
+        echo "FATAL: runner is not registered; run 'doas /usr/local/sbin/gha-setup' with a fresh registration token"
         "$TEARDOWN" || true
         exit 1
     }

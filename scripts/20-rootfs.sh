@@ -134,7 +134,9 @@ rm -f "$ROOTFS"/etc/ssh/ssh_host_*
 ADMIN_SHELL=$(awk -F: '$1 == "admin" { print $7 }' "$ROOTFS/etc/passwd")
 [ "$ADMIN_SHELL" = /bin/ash ] || die "admin shell must be /bin/ash (got '$ADMIN_SHELL')"
 [ ! -e "$ROOTFS/usr/local/sbin/gha-onboard-shell" ] || die "onboarding login wrapper must not exist"
-grep -q 'doas gha-setup' "$ROOTFS/etc/motd" || die "MOTD must document manual gha-setup"
+grep -q 'doas /usr/local/sbin/gha-setup' "$ROOTFS/etc/motd" || die "MOTD must document manual gha-setup"
+grep -qx 'permit admin as root' "$ROOTFS/etc/doas.d/gha.conf" || die "admin must have password-authenticated recovery elevation"
+grep -qx 'permit nopass admin cmd /sbin/reboot' "$ROOTFS/etc/doas.d/gha.conf" || die "admin must be able to reboot"
 
 # authorized_keys fetched in CI (github.com/<owner>.keys)
 if [ -s /input/config/authorized_keys ]; then
