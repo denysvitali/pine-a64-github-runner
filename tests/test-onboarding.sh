@@ -58,6 +58,7 @@ grep -qx 'permit admin as root' "$TMP/mock-root/etc/doas.d/gha.conf"
 grep -qx 'permit nopass admin cmd /usr/local/sbin/gha-setup' "$TMP/mock-root/etc/doas.d/gha.conf"
 grep -qx 'permit nopass admin cmd /usr/local/sbin/ab-flash' "$TMP/mock-root/etc/doas.d/gha.conf"
 grep -qx 'permit nopass admin cmd /sbin/reboot' "$TMP/mock-root/etc/doas.d/gha.conf"
+reject_pattern '^deny' "$TMP/mock-root/etc/doas.d/gha.conf"
 
 run_apply() {
     GHA_CONF_DIR="$TMP/conf" \
