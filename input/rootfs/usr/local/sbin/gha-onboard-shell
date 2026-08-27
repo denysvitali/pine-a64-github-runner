@@ -1,0 +1,10 @@
+#!/bin/sh
+# Force an unfinished device into onboarding; become a normal shell afterward.
+if [ ! -f /data/conf/onboarding-complete ]; then
+    if [ "$#" -gt 0 ]; then
+        echo "First-boot setup must be completed before remote commands are allowed." >&2
+    fi
+    exec doas /usr/local/sbin/gha-setup
+fi
+
+exec /bin/ash "$@"

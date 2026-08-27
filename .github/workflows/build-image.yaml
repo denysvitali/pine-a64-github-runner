@@ -44,6 +44,9 @@ jobs:
             [ -n "${{ vars.DEFAULT_HOSTNAME }}" ] && echo "DEFAULT_HOSTNAME=${{ vars.DEFAULT_HOSTNAME }}"
           } >> .env || true
 
+      - name: Test first-boot onboarding
+        run: ./tests/test-onboarding.sh
+
       - name: Build image (native arm64 container)
         env:
           GITHUB_TOKEN: ${{ github.token }}

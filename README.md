@@ -1,9 +1,9 @@
 # pine-a64-gh-runner
 
 Immutable, auto-updating **GitHub Actions self-hosted runner** image for the
-**Pine A64-DB Rev B** (Allwinner A64). Flash an SD card, drop in a token file,
-power on: the board registers itself as an *ephemeral* runner, executes exactly
-one job per cycle, then wipes everything short of `/data`.
+**Pine A64-DB Rev B** (Allwinner A64). Flash an SD card, SSH in for guided
+first-time setup, and the board registers itself as an *ephemeral* runner. It
+executes exactly one job per cycle, then wipes everything short of `/data`.
 
 Sibling project of [raspi-k3s](https://github.com/denysvitali/raspi-k3s) and built entirely **in GitHub Actions CI** — no local tooling required.
 
@@ -30,7 +30,7 @@ SD card (MBR)
 | Immutable rootfs | Stock Alpine `mkinitfs`: `overlaytmpfs=yes` mounts the slot **read-only** and overlays a RAM upperdir → pristine state on every boot |
 | Ephemeral per job | Runner runs with `--ephemeral --disableupdate`; when the job ends the listener exits, `supervise-daemon` restarts the cycle script which rebuilds a fresh tmpfs-overlaid chroot and re-registers |
 | Dropped privileges | Everything runs as uid 1001 (`runner`) via `setpriv`, inside a Debian chroot, zero sudo, locked passwords, cgroup memory limit (768M) |
-| Persistent data | Only `/data` (ext4, p4) is writable across reboots: credentials (`conf/env`), logs, caches, `_work` (wiped between cycles) |
+| Persistent data | Only `/data` (ext4, p4) is writable across reboots: onboarding state and credentials (`conf/`), logs, caches, `_work` (wiped between cycles) |
 | A/B updates | `ab-flash` writes the inactive slot + new kernel assets, flips a marker file atomically; rollback = `gha-slot-select a` |
 
 ### Why the Debian chroot?
@@ -60,30 +60,40 @@ zstd -dc sdcard.img.zst | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
 
 (≥8 GB card recommended; slots are 2 GB each by default.)
 
-### 3. Provision credentials
+### 3. Run first-time setup
 
-Either re-insert the SD card into your laptop and edit the `data` partition,
-or wait for first boot and SSH in:
-
-```sh
-sudo -i                      # via doas as admin, key-only SSH
-cd /data/conf
-cp env.example env
-vi env                       # set GITHUB_URL, GITHUB_TOKEN
-chmod 600 env
-reboot                       # or: rc-service gha-runner restart
-```
-
-`env` contents:
+Find the board's DHCP address, wait for SSH to start, and log in with the
+temporary bootstrap credential:
 
 ```sh
-GITHUB_URL=https://github.com/OWNER/REPO
-GITHUB_TOKEN=github_pat_...   # fine-grained PAT: Administration:read/write on that repo
-RUNNER_LABELS=pine64,aarch64,self-hosted   # optional
+ssh admin@DEVICE_IP
+# temporary password: pine64-setup
 ```
 
-The PAT is used **only** to mint short-lived (1 h) registration tokens at each
-cycle start; it never leaves the box and is never baked into any image.
+The login launches the interactive `gha-setup` wizard. It asks for your SSH
+public key, repository URL, GitHub token, optional runner labels/name, and a new
+local console password. Review the summary and confirm; the wizard starts the
+runner, replaces the public bootstrap password, and switches SSH to key-only
+authentication before returning. Reconnect using your key:
+
+```sh
+ssh admin@DEVICE_IP
+```
+
+The token needs repository **Administration: read/write** permission (or the
+classic `repo` scope). It is stored root-only in `/data/conf/env` and used only
+to mint short-lived registration tokens. Run `doas gha-setup` later to rotate
+the key, token, local password, or runner settings.
+
+> **Security note:** `admin` / `pine64-setup` is public and intentionally works
+> only until onboarding completes. Keep a new device on a trusted local network,
+> complete setup immediately, and do not expose TCP port 22 to the internet
+> before then. If setup is interrupted, reconnect and start again. The Actions
+> runner does not start until onboarding is complete.
+
+The SSH host key is generated on the physical device during its first boot and
+persisted on `/data`; no device identity or self-signed certificate is generated
+in CI or shared between images.
 
 ### 4. Verify
 
@@ -142,7 +152,7 @@ cp .env.example .env && ./build_image.sh
 | Secrets | None in image. PAT lives in `/data/conf/env` (0600 root-only); registration tokens live ~seconds |
 | Credentials hygiene | `.credentials` land on tmpfs upperdir — wiped after every single job |
 | Network | nftables default-drop inbound (SSH only); egress blocks link-local metadata (169.254.169.254) & carrier ranges; LAN stays reachable for DNS/gateway (documented tradeoff) |
-| Services | sshd key-only (`admin` user only), root password locked, serial console login impossible (locked root) |
+| Services | sshd allows the temporary `admin` password only during onboarding, then enforces key-only login; root is always locked |
 | Resources | cgroup-v2 `memory.max=768M` on the runner tree; zram swap absorbs spikes |
 | Supply chain | Runner tarball checksummed against GitHub's published digest when available; `RUNNER_SHA256` enforces pinning; kernel/rootfs come from pinned Alpine branch |
 

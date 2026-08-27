@@ -4,7 +4,7 @@
 description="Prepare persistent /data for pine-a64-gh-runner"
 
 depend() {
-    need localmount
+    need localmount seedrng
     after bootmisc
 }
 
@@ -26,5 +26,9 @@ RUNNER_LABELS=pine64,aarch64,self-hosted
 EOF
         chmod 600 /data/conf/env.example
     fi
+
+    # The immutable system slot is reset on reboot. Re-apply the persistent
+    # onboarding state (key, local password hash, and SSH auth policy) each boot.
+    /usr/local/sbin/gha-apply-auth-state || return 1
     eend 0
 }

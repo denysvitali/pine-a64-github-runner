@@ -1,0 +1,69 @@
+#!/bin/sh
+# Reconstruct mutable authentication state from the persistent DATA partition.
+set -eu
+
+CONF_DIR=${GHA_CONF_DIR:-/data/conf}
+ADMIN_HOME=${GHA_ADMIN_HOME:-/home/admin}
+SHADOW_FILE=${GHA_SHADOW_FILE:-/etc/shadow}
+SSHD_AUTH_CONFIG=${GHA_SSHD_AUTH_CONFIG:-/etc/ssh/sshd_config.d/10-gha-auth.conf}
+HOST_KEY_DIR=${GHA_HOST_KEY_DIR:-$CONF_DIR/ssh-host-keys}
+ADMIN_UID=${GHA_ADMIN_UID:-1000}
+ADMIN_GID=${GHA_ADMIN_GID:-1000}
+
+install -d -m 700 "$CONF_DIR"
+install -d -m 700 -o "$ADMIN_UID" -g "$ADMIN_GID" "$ADMIN_HOME/.ssh"
+install -d -m 755 "$(dirname "$SSHD_AUTH_CONFIG")"
+install -d -m 700 "$HOST_KEY_DIR"
+
+# Host identity must be unique per physical device, never generated in CI.
+if [ ! -s "$HOST_KEY_DIR/ssh_host_ed25519_key" ]; then
+    ssh-keygen -q -t ed25519 -N '' -f "$HOST_KEY_DIR/ssh_host_ed25519_key"
+fi
+chmod 600 "$HOST_KEY_DIR/ssh_host_ed25519_key"
+chmod 644 "$HOST_KEY_DIR/ssh_host_ed25519_key.pub"
+
+if [ -f "$CONF_DIR/onboarding-complete" ]; then
+    # Render the restrictive policy before reading any persisted credential.
+    # If the DATA state is corrupt, sshd must never fall back to the public
+    # bootstrap password.
+    cat > "$SSHD_AUTH_CONFIG" <<EOF
+HostKey $HOST_KEY_DIR/ssh_host_ed25519_key
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+AuthenticationMethods publickey
+EOF
+    chmod 600 "$SSHD_AUTH_CONFIG"
+
+    for required in authorized_keys admin-password.hash env; do
+        if [ ! -s "$CONF_DIR/$required" ]; then
+            echo "FATAL: onboarding marker exists but $CONF_DIR/$required is missing" >&2
+            exit 1
+        fi
+    done
+
+    install -m 600 -o "$ADMIN_UID" -g "$ADMIN_GID" "$CONF_DIR/authorized_keys" "$ADMIN_HOME/.ssh/authorized_keys"
+    ADMIN_HASH=$(cat "$CONF_DIR/admin-password.hash")
+    case "$ADMIN_HASH" in
+        \$6\$*|\$y\$*) ;;
+        *) echo "FATAL: invalid persisted admin password hash" >&2; exit 1 ;;
+    esac
+    awk -F: -v OFS=: -v hash="$ADMIN_HASH" '
+        $1 == "admin" { $2 = hash; found = 1 }
+        { print }
+        END { if (!found) exit 1 }
+    ' "$SHADOW_FILE" > "$SHADOW_FILE.tmp"
+    chmod --reference="$SHADOW_FILE" "$SHADOW_FILE.tmp"
+    chown --reference="$SHADOW_FILE" "$SHADOW_FILE.tmp"
+    mv "$SHADOW_FILE.tmp" "$SHADOW_FILE"
+
+else
+    cat > "$SSHD_AUTH_CONFIG" <<EOF
+HostKey $HOST_KEY_DIR/ssh_host_ed25519_key
+# Temporary first-boot access. gha-setup replaces this with key-only auth.
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AuthenticationMethods any
+EOF
+fi
+chmod 600 "$SSHD_AUTH_CONFIG"

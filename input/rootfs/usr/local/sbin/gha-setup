@@ -1,0 +1,181 @@
+#!/bin/sh
+# Interactive first-boot onboarding and later configuration editor.
+set -eu
+
+if [ "$(id -u)" -ne 0 ]; then
+    exec doas /usr/local/sbin/gha-setup
+fi
+
+CONF_DIR=/data/conf
+ENV_FILE=$CONF_DIR/env
+OLD_UMASK=$(umask)
+umask 077
+TMP_DIR=$(mktemp -d "$CONF_DIR/.setup.XXXXXX")
+trap 'stty echo </dev/tty 2>/dev/null || true; rm -rf "$TMP_DIR"; umask "$OLD_UMASK"' EXIT HUP INT TERM
+
+say() { printf '%s\n' "$*"; }
+prompt() {
+    printf '%s' "$1" >/dev/tty
+    IFS= read -r REPLY </dev/tty
+}
+secret_prompt() {
+    printf '%s' "$1" >/dev/tty
+    stty -echo </dev/tty
+    IFS= read -r REPLY </dev/tty || { stty echo </dev/tty; return 1; }
+    stty echo </dev/tty
+    printf '\n' >/dev/tty
+}
+
+say ''
+say '┌──────────────────────────────────────────────┐'
+say '│  Pine A64 GitHub Runner — first-time setup  │'
+say '└──────────────────────────────────────────────┘'
+say ''
+say 'This wizard will install your SSH key, configure the runner, and'
+say 'permanently turn off SSH password login on this device.'
+say ''
+
+EXISTING_KEY=
+if [ -s "$CONF_DIR/authorized_keys" ]; then
+    EXISTING_KEY=$(head -n 1 "$CONF_DIR/authorized_keys")
+elif [ -s /home/admin/.ssh/authorized_keys ]; then
+    EXISTING_KEY=$(head -n 1 /home/admin/.ssh/authorized_keys)
+fi
+
+while :; do
+    if [ -n "$EXISTING_KEY" ]; then
+        prompt 'SSH public key [press Enter to keep the installed key]: '
+        SSH_KEY=${REPLY:-$EXISTING_KEY}
+    else
+        prompt 'Paste your SSH public key: '
+        SSH_KEY=$REPLY
+    fi
+    printf '%s\n' "$SSH_KEY" > "$TMP_DIR/authorized_keys"
+    if ssh-keygen -l -f "$TMP_DIR/authorized_keys" >/dev/null 2>&1; then
+        break
+    fi
+    say 'That is not a valid SSH public key. Try again.'
+done
+KEY_FINGERPRINT=$(ssh-keygen -l -f "$TMP_DIR/authorized_keys" | awk '{print $2" ("$4")"}')
+
+GITHUB_URL=
+GITHUB_TOKEN=
+RUNNER_LABELS=pine64,aarch64,self-hosted
+RUNNER_NAME=
+if [ -r "$ENV_FILE" ]; then
+    # The file is root-owned and was produced by this script with validated values.
+    . "$ENV_FILE"
+fi
+
+while :; do
+    prompt "GitHub repository URL${GITHUB_URL:+ [$GITHUB_URL]}: "
+    GITHUB_URL=${REPLY:-$GITHUB_URL}
+    GITHUB_URL=${GITHUB_URL%.git}
+    case "$GITHUB_URL" in
+        https://github.com/*/*)
+            REPO_PATH=${GITHUB_URL#https://github.com/}
+            OWNER=${REPO_PATH%%/*}
+            REPOSITORY=${REPO_PATH#*/}
+            case "$REPO_PATH" in
+                */*/*|*[!A-Za-z0-9._/-]*) ;;
+                *)
+                    if [ -n "$OWNER" ] && [ -n "$REPOSITORY" ] && [ "$REPOSITORY" != "$REPO_PATH" ]; then
+                        break
+                    fi ;;
+            esac ;;
+    esac
+    say 'Use the form https://github.com/OWNER/REPOSITORY.'
+done
+
+while :; do
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        secret_prompt 'GitHub token [press Enter to keep the saved token]: '
+        [ -z "$REPLY" ] || GITHUB_TOKEN=$REPLY
+    else
+        secret_prompt 'GitHub token (input hidden): '
+        GITHUB_TOKEN=$REPLY
+    fi
+    case "$GITHUB_TOKEN" in
+        *[!A-Za-z0-9_]*|'') say 'Enter a fine-grained token (github_pat_…) or classic token (ghp_…).' ;;
+        ghp_[A-Za-z0-9]*|github_pat_[A-Za-z0-9_]*) break ;;
+        *) say 'Enter a fine-grained token (github_pat_…) or classic token (ghp_…).' ;;
+    esac
+done
+
+while :; do
+    prompt "Runner labels [$RUNNER_LABELS]: "
+    RUNNER_LABELS=${REPLY:-$RUNNER_LABELS}
+    case "$RUNNER_LABELS" in
+        ''|*[!A-Za-z0-9,._-]*) say 'Labels may contain letters, numbers, commas, dots, underscores, and hyphens.' ;;
+        *) break ;;
+    esac
+done
+
+DEFAULT_RUNNER_NAME=${RUNNER_NAME:-$(hostname)}
+while :; do
+    prompt "Runner name [$DEFAULT_RUNNER_NAME]: "
+    RUNNER_NAME=${REPLY:-$DEFAULT_RUNNER_NAME}
+    case "$RUNNER_NAME" in
+        *[!A-Za-z0-9._-]*|'') say 'The runner name may contain letters, numbers, dots, underscores, and hyphens.' ;;
+        *) break ;;
+    esac
+done
+
+say ''
+say 'Choose a replacement local password (12+ characters). It can be used at'
+say 'the physical console; SSH will accept keys only after this wizard finishes.'
+while :; do
+    secret_prompt 'New local password: '
+    NEW_PASSWORD=$REPLY
+    [ "${#NEW_PASSWORD}" -ge 12 ] || { say 'Use at least 12 characters.'; continue; }
+    [ "$NEW_PASSWORD" != 'pine64-setup' ] || { say 'Choose a password other than the temporary password.'; continue; }
+    secret_prompt 'Confirm local password: '
+    [ "$REPLY" = "$NEW_PASSWORD" ] || { say 'Passwords did not match. Try again.'; continue; }
+    break
+done
+
+say ''
+say "SSH key:    $KEY_FINGERPRINT"
+say "Repository: $GITHUB_URL"
+say "Runner:     $RUNNER_NAME"
+say "Labels:     $RUNNER_LABELS"
+prompt 'Apply this configuration? [y/N] '
+case "$REPLY" in
+    y|Y|yes|YES) ;;
+    *) say 'No changes were made.'; exit 1 ;;
+esac
+
+cat > "$TMP_DIR/env" <<EOF
+GITHUB_URL=$GITHUB_URL
+GITHUB_TOKEN=$GITHUB_TOKEN
+RUNNER_LABELS=$RUNNER_LABELS
+RUNNER_NAME=$RUNNER_NAME
+RUNNER_NAME_SET=1
+EOF
+
+# Change the live password, then retain only its hash so the immutable root can
+# be reconstructed securely after future boots and A/B slot updates.
+printf 'admin:%s\n' "$NEW_PASSWORD" | chpasswd
+unset NEW_PASSWORD REPLY
+awk -F: '$1 == "admin" { print $2 }' /etc/shadow > "$TMP_DIR/admin-password.hash"
+[ -s "$TMP_DIR/admin-password.hash" ] || { say 'Could not save the new password hash.' >&2; exit 1; }
+
+install -m 600 "$TMP_DIR/authorized_keys" "$CONF_DIR/authorized_keys"
+install -m 600 "$TMP_DIR/admin-password.hash" "$CONF_DIR/admin-password.hash"
+install -m 600 "$TMP_DIR/env" "$ENV_FILE"
+touch "$CONF_DIR/onboarding-complete"
+chmod 600 "$CONF_DIR/onboarding-complete"
+
+/usr/local/sbin/gha-apply-auth-state
+sshd -t
+rc-service sshd reload
+rc-service gha-runner restart || rc-service gha-runner start
+
+say ''
+say 'Setup complete.'
+say '  ✓ SSH key installed'
+say '  ✓ Temporary password replaced'
+say '  ✓ SSH password authentication disabled'
+say '  ✓ GitHub Actions runner started'
+say ''
+say 'Future logins: ssh admin@'"$(hostname)"

@@ -20,6 +20,13 @@ depend() {
     after firewall nftables chronyd
 }
 
+start_pre() {
+    if [ ! -f /data/conf/onboarding-complete ]; then
+        eerror "First-boot setup is incomplete; SSH as admin and run gha-setup"
+        return 1
+    fi
+}
+
 stop_post() {
     /usr/local/sbin/gha-chroot-teardown || true
 }
