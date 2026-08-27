@@ -4,16 +4,17 @@ set -eu
 ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 APPLY="$ROOT/input/rootfs/usr/local/sbin/gha-apply-auth-state"
 SETUP="$ROOT/input/rootfs/usr/local/sbin/gha-setup"
-SHELL_WRAPPER="$ROOT/input/rootfs/usr/local/sbin/gha-onboard-shell"
 RUNNER_CYCLE="$ROOT/input/rootfs/usr/local/sbin/gha-runner-cycle.sh"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 
-for script in "$APPLY" "$SETUP" "$SHELL_WRAPPER" "$RUNNER_CYCLE"; do
+for script in "$APPLY" "$SETUP" "$RUNNER_CYCLE"; do
     sh -n "$script"
 done
 bash -n "$ROOT/scripts/add-users.sh" "$ROOT/scripts/20-rootfs.sh"
 grep -q 'need localmount seedrng' "$ROOT/input/rootfs/etc/init.d/gha-data"
+grep -q 'admin shell must be /bin/ash' "$ROOT/scripts/20-rootfs.sh"
+grep -q 'onboarding login wrapper must not exist' "$ROOT/scripts/20-rootfs.sh"
 
 reject_pattern() {
     pattern=$1
@@ -26,8 +27,8 @@ reject_pattern() {
 
 # Recovery is always available, setup never accepts a PAT, and the one-time
 # listener retains registration credentials while still exiting after one job.
-grep -q 'exec /bin/ash' "$SHELL_WRAPPER"
-reject_pattern 'exec doas' "$SHELL_WRAPPER"
+test ! -e "$ROOT/input/rootfs/usr/local/sbin/gha-onboard-shell"
+grep -q 'doas gha-setup' "$ROOT/input/rootfs/etc/motd"
 grep -q 'Runner registration token' "$SETUP"
 reject_pattern 'GITHUB_TOKEN' "$SETUP"
 reject_pattern 'github_pat_' "$SETUP"
@@ -49,7 +50,7 @@ printf '%s\n' 'root:x:0:0:root:/root:/bin/ash' > "$TMP/mock-root/etc/passwd"
 printf '%s\n' 'root:x:0:' > "$TMP/mock-root/etc/group"
 printf '%s\n' 'root:!::0:::::' > "$TMP/mock-root/etc/shadow"
 CHROOT_ROOT="$TMP/mock-root" bash -c 'source "$1"' _ "$ROOT/scripts/add-users.sh"
-grep -qx 'admin:x:1000:1000::/home/admin:/usr/local/sbin/gha-onboard-shell' "$TMP/mock-root/etc/passwd"
+grep -qx 'admin:x:1000:1000::/home/admin:/bin/ash' "$TMP/mock-root/etc/passwd"
 grep -qx 'admin:x:1000:' "$TMP/mock-root/etc/group"
 grep -Fqx 'admin:$6$ghaPineA64Setup$n/UnU5.f8da6riPYe9aiPFM1or18CsMXVG3pT1ZCRYLMFhlVlvln4q35fIbEEXb4WlmElxHTL4kyTiJSTd.HF.::0:::::' "$TMP/mock-root/etc/shadow"
 

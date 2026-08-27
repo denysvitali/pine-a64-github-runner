@@ -23,7 +23,6 @@ install -d -m 700 -o 1000 -g 1000 "$R/home/admin"
 # and only exists to make a freshly flashed device reachable on the local LAN.
 ADMIN_BOOTSTRAP_HASH='$6$ghaPineA64Setup$n/UnU5.f8da6riPYe9aiPFM1or18CsMXVG3pT1ZCRYLMFhlVlvln4q35fIbEEXb4WlmElxHTL4kyTiJSTd.HF.'
 sed -i "s|^admin:[^:]*:|admin:${ADMIN_BOOTSTRAP_HASH}:|" "$R/etc/shadow"
-sed -i 's|^admin:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*:[^:]*$|admin:x:1000:1000::/home/admin:/usr/local/sbin/gha-onboard-shell|' "$R/etc/passwd"
 
 # runner user exists only inside the Debian chroot (created in stage 30);
 # here we just reserve nothing on the Alpine side.

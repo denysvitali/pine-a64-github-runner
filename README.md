@@ -70,8 +70,9 @@ ssh admin@DEVICE_IP
 # temporary password: pine64-setup
 ```
 
-Every login opens a normal shell. Setup is optional, so you can always inspect
-or recover the device first. Start the wizard explicitly:
+The `admin` account's shell is always `/bin/ash`; onboarding is not present in
+`/etc/passwd` and cannot intercept login. The MOTD suggests setup, but setup is
+optional so you can always inspect or recover the device first. Start it explicitly:
 
 ```sh
 doas gha-setup

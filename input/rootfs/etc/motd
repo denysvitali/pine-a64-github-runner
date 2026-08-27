@@ -1,1 +1,4 @@
 Pine A64 GitHub Actions runner
+
+This login always opens a recovery shell; onboarding is never forced.
+Run `doas gha-setup` manually to configure or reconfigure the device.
