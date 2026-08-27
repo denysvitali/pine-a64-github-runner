@@ -1,8 +1,8 @@
 #!/sbin/openrc-run
-# GitHub Actions ephemeral runner (supervised: exit == next cycle).
+# GitHub Actions one-job runner (supervised: exit == clean next cycle).
 # Runs the glibc runner inside a tmpfs-overlaid Debian chroot, as uid 1001.
 
-description="GitHub Actions ephemeral runner (Pine A64)"
+description="GitHub Actions isolated one-job runner (Pine A64)"
 
 command="/usr/local/sbin/gha-runner-cycle.sh"
 supervisor=supervise-daemon

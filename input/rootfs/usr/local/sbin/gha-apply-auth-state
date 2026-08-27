@@ -9,6 +9,7 @@ SSHD_AUTH_CONFIG=${GHA_SSHD_AUTH_CONFIG:-/etc/ssh/sshd_config.d/10-gha-auth.conf
 HOST_KEY_DIR=${GHA_HOST_KEY_DIR:-$CONF_DIR/ssh-host-keys}
 ADMIN_UID=${GHA_ADMIN_UID:-1000}
 ADMIN_GID=${GHA_ADMIN_GID:-1000}
+SHADOW_UID=${GHA_SHADOW_UID:-0}
 
 install -d -m 700 "$CONF_DIR"
 install -d -m 700 -o "$ADMIN_UID" -g "$ADMIN_GID" "$ADMIN_HOME/.ssh"
@@ -52,8 +53,10 @@ EOF
         { print }
         END { if (!found) exit 1 }
     ' "$SHADOW_FILE" > "$SHADOW_FILE.tmp"
-    chmod --reference="$SHADOW_FILE" "$SHADOW_FILE.tmp"
-    chown --reference="$SHADOW_FILE" "$SHADOW_FILE.tmp"
+    # BusyBox chmod/chown do not implement GNU --reference.
+    SHADOW_GID=$(stat -c '%g' "$SHADOW_FILE")
+    chmod 640 "$SHADOW_FILE.tmp"
+    chown "$SHADOW_UID:$SHADOW_GID" "$SHADOW_FILE.tmp"
     mv "$SHADOW_FILE.tmp" "$SHADOW_FILE"
 
 else

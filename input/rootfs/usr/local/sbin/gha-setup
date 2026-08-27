@@ -31,8 +31,8 @@ say '┌────────────────────────
 say '│  Pine A64 GitHub Runner — first-time setup  │'
 say '└──────────────────────────────────────────────┘'
 say ''
-say 'This wizard will install your SSH key, configure the runner, and'
-say 'permanently turn off SSH password login on this device.'
+say 'This wizard installs your SSH key and configures the runner.'
+say 'You can cancel at any prompt and return to the recovery shell.'
 say ''
 
 EXISTING_KEY=
@@ -56,10 +56,9 @@ while :; do
     fi
     say 'That is not a valid SSH public key. Try again.'
 done
-KEY_FINGERPRINT=$(ssh-keygen -l -f "$TMP_DIR/authorized_keys" | awk '{print $2" ("$4")"}')
+KEY_FINGERPRINT=$(ssh-keygen -l -f "$TMP_DIR/authorized_keys" | awk '{print $2" "$4}')
 
 GITHUB_URL=
-GITHUB_TOKEN=
 RUNNER_LABELS=pine64,aarch64,self-hosted
 RUNNER_NAME=
 if [ -r "$ENV_FILE" ]; then
@@ -87,18 +86,17 @@ while :; do
     say 'Use the form https://github.com/OWNER/REPOSITORY.'
 done
 
+say ''
+say 'In GitHub, open Settings → Actions → Runners → New self-hosted runner.'
+say 'Copy the short-lived token from the displayed ./config.sh command.'
 while :; do
-    if [ -n "${GITHUB_TOKEN:-}" ]; then
-        secret_prompt 'GitHub token [press Enter to keep the saved token]: '
-        [ -z "$REPLY" ] || GITHUB_TOKEN=$REPLY
-    else
-        secret_prompt 'GitHub token (input hidden): '
-        GITHUB_TOKEN=$REPLY
-    fi
-    case "$GITHUB_TOKEN" in
-        *[!A-Za-z0-9_]*|'') say 'Enter a fine-grained token (github_pat_…) or classic token (ghp_…).' ;;
-        ghp_[A-Za-z0-9]*|github_pat_[A-Za-z0-9_]*) break ;;
-        *) say 'Enter a fine-grained token (github_pat_…) or classic token (ghp_…).' ;;
+    secret_prompt 'Runner registration token (input hidden): '
+    REGISTRATION_TOKEN=$REPLY
+    case "$REGISTRATION_TOKEN" in
+        *[!A-Za-z0-9_-]*|'') say 'That registration token is not valid.' ;;
+        *)
+            [ "${#REGISTRATION_TOKEN}" -ge 20 ] && break
+            say 'That registration token is too short.' ;;
     esac
 done
 
@@ -147,11 +145,12 @@ esac
 
 cat > "$TMP_DIR/env" <<EOF
 GITHUB_URL=$GITHUB_URL
-GITHUB_TOKEN=$GITHUB_TOKEN
 RUNNER_LABELS=$RUNNER_LABELS
 RUNNER_NAME=$RUNNER_NAME
 RUNNER_NAME_SET=1
 EOF
+printf '%s\n' "$REGISTRATION_TOKEN" > "$TMP_DIR/registration-token"
+unset REGISTRATION_TOKEN
 
 # Change the live password, then retain only its hash so the immutable root can
 # be reconstructed securely after future boots and A/B slot updates.
@@ -163,12 +162,19 @@ awk -F: '$1 == "admin" { print $2 }' /etc/shadow > "$TMP_DIR/admin-password.hash
 install -m 600 "$TMP_DIR/authorized_keys" "$CONF_DIR/authorized_keys"
 install -m 600 "$TMP_DIR/admin-password.hash" "$CONF_DIR/admin-password.hash"
 install -m 600 "$TMP_DIR/env" "$ENV_FILE"
+install -m 600 "$TMP_DIR/registration-token" "$CONF_DIR/registration-token"
 touch "$CONF_DIR/onboarding-complete"
 chmod 600 "$CONF_DIR/onboarding-complete"
 
 /usr/local/sbin/gha-apply-auth-state
 sshd -t
 rc-service sshd reload
+# A fresh registration token means a fresh runner identity. Stop any listener
+# before discarding its local credentials; stale offline entries can be removed
+# from the repository's Runners page.
+rc-service gha-runner stop 2>/dev/null || true
+install -d -m 700 -o 1001 -g 1001 /data/runner/config
+find /data/runner/config -mindepth 1 -delete
 rc-service gha-runner restart || rc-service gha-runner start
 
 say ''
@@ -176,6 +182,6 @@ say 'Setup complete.'
 say '  ✓ SSH key installed'
 say '  ✓ Temporary password replaced'
 say '  ✓ SSH password authentication disabled'
-say '  ✓ GitHub Actions runner started'
+say '  ✓ GitHub Actions runner registration started'
 say ''
 say 'Future logins: ssh admin@'"$(hostname)"

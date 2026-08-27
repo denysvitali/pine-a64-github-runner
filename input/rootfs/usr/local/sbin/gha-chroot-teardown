@@ -1,5 +1,5 @@
 #!/bin/sh
-# Idempotent teardown of the ephemeral chroot overlay + binds.
+# Idempotent teardown of the per-job chroot overlay + binds.
 set -u
 
 M=/srv/chroot

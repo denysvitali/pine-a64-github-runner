@@ -5,14 +5,37 @@ ROOT=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 APPLY="$ROOT/input/rootfs/usr/local/sbin/gha-apply-auth-state"
 SETUP="$ROOT/input/rootfs/usr/local/sbin/gha-setup"
 SHELL_WRAPPER="$ROOT/input/rootfs/usr/local/sbin/gha-onboard-shell"
+RUNNER_CYCLE="$ROOT/input/rootfs/usr/local/sbin/gha-runner-cycle.sh"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
 
-for script in "$APPLY" "$SETUP" "$SHELL_WRAPPER"; do
+for script in "$APPLY" "$SETUP" "$SHELL_WRAPPER" "$RUNNER_CYCLE"; do
     sh -n "$script"
 done
 bash -n "$ROOT/scripts/add-users.sh" "$ROOT/scripts/20-rootfs.sh"
 grep -q 'need localmount seedrng' "$ROOT/input/rootfs/etc/init.d/gha-data"
+
+reject_pattern() {
+    pattern=$1
+    file=$2
+    if grep -q -- "$pattern" "$file"; then
+        echo "unexpected '$pattern' in $file" >&2
+        exit 1
+    fi
+}
+
+# Recovery is always available, setup never accepts a PAT, and the one-time
+# listener retains registration credentials while still exiting after one job.
+grep -q 'exec /bin/ash' "$SHELL_WRAPPER"
+reject_pattern 'exec doas' "$SHELL_WRAPPER"
+grep -q 'Runner registration token' "$SETUP"
+reject_pattern 'GITHUB_TOKEN' "$SETUP"
+reject_pattern 'github_pat_' "$SETUP"
+reject_pattern 'chmod --reference' "$APPLY"
+reject_pattern 'chown --reference' "$APPLY"
+grep -q -- './run.sh --once' "$RUNNER_CYCLE"
+grep -q 'PERSIST_CONFIG=/data/runner/config' "$RUNNER_CYCLE"
+reject_pattern 'GITHUB_TOKEN' "$RUNNER_CYCLE"
 
 mkdir -p "$TMP/conf" "$TMP/home" "$TMP/sshd" "$TMP/host-keys"
 cat > "$TMP/shadow" <<'EOF'
@@ -38,6 +61,7 @@ run_apply() {
     GHA_HOST_KEY_DIR="$TMP/host-keys" \
     GHA_ADMIN_UID="$(id -u)" \
     GHA_ADMIN_GID="$(id -g)" \
+    GHA_SHADOW_UID="$(id -u)" \
     "$APPLY"
 }
 
@@ -58,6 +82,7 @@ run_apply
 grep -qx 'PasswordAuthentication no' "$TMP/sshd/10-gha-auth.conf"
 grep -qx 'AuthenticationMethods publickey' "$TMP/sshd/10-gha-auth.conf"
 grep -qx 'admin:$6$replacement$newhash:20000:0:99999:7:::' "$TMP/shadow"
+test "$(stat -c '%a' "$TMP/shadow")" = 640
 cmp "$TMP/conf/authorized_keys" "$TMP/home/.ssh/authorized_keys"
 
 # A marker without its credential payload must fail closed.
