@@ -45,7 +45,8 @@ jobs:
           } >> .env || true
 
       - name: Test first-boot onboarding
-        run: ./tests/test-onboarding.sh
+        # add-users.sh deliberately creates uid/gid 1000-owned image files.
+        run: sudo ./tests/test-onboarding.sh
 
       - name: Build image (native arm64 container)
         env:
